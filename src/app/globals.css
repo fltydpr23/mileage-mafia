@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  background: #0a0a0a;
+}
+
+/* --- Cinematic Noir Animations --- */
+
+/* --- Cinematic Noir Animations (v2) --- */
+
+@keyframes mm-drift {
+  0%   { transform: translate3d(-3%, -2%, 0) scale(1.08); }
+  50%  { transform: translate3d(3%, 2%, 0) scale(1.10); }
+  100% { transform: translate3d(-3%, -2%, 0) scale(1.08); }
+}
+
+@keyframes mm-jitter {
+  0% { transform: translate3d(0,0,0); }
+  10% { transform: translate3d(0.3px,-0.2px,0); }
+  20% { transform: translate3d(-0.2px,0.3px,0); }
+  30% { transform: translate3d(0.2px,0.1px,0); }
+  40% { transform: translate3d(-0.3px,0.2px,0); }
+  50% { transform: translate3d(0.2px,-0.1px,0); }
+  60% { transform: translate3d(-0.2px,-0.2px,0); }
+  70% { transform: translate3d(0.3px,0.2px,0); }
+  80% { transform: translate3d(-0.1px,0.2px,0); }
+  90% { transform: translate3d(0.1px,-0.3px,0); }
+  100% { transform: translate3d(0,0,0); }
+}
+
+@keyframes mm-flicker {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 12px rgba(255,255,255,0.14)); }
+  6% { opacity: 0.85; }
+  7% { opacity: 0.35; }
+  8% { opacity: 0.95; }
+  32% { opacity: 0.9; }
+  33% { opacity: 0.55; }
+  34% { opacity: 1; }
+  62% { opacity: 0.9; }
+  63% { opacity: 0.6; }
+  64% { opacity: 1; }
+}
+
+/* ACCESS GRANTED: harsh flicker */
+@keyframes mm-grant-flicker {
+  0% { opacity: 0; transform: translate3d(0,0,0) scale(0.98); }
+  10% { opacity: 1; }
+  12% { opacity: 0.25; }
+  15% { opacity: 1; }
+  18% { opacity: 0.35; }
+  22% { opacity: 1; }
+  30% { opacity: 0.7; }
+  40% { opacity: 1; }
+  100% { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+}
+
+/* small shake */
+@keyframes mm-shake {
+  0%, 100% { transform: translate3d(0,0,0); }
+  15% { transform: translate3d(-2px, 1px, 0); }
+  30% { transform: translate3d(2px, -1px, 0); }
+  45% { transform: translate3d(-1px, -2px, 0); }
+  60% { transform: translate3d(1px, 2px, 0); }
+  75% { transform: translate3d(-1px, 1px, 0); }
+}
+
+/* flash frame */
+@keyframes mm-flash {
+  0% { opacity: 0; }
+  8% { opacity: 0.75; }
+  18% { opacity: 0.15; }
+  100% { opacity: 0; }
+}
+
+/* typewriter */
+@keyframes mm-type {
+  from { width: 0; }
+  to { width: 100%; }
+}
+@keyframes mm-caret {
+  0%, 100% { border-color: transparent; }
+  50% { border-color: rgba(255,255,255,0.7); }
+}
+
+.mm-drift { animation: mm-drift 18s ease-in-out infinite; will-change: transform; }
+.mm-jitter { animation: mm-jitter 1.8s steps(2, end) infinite; will-change: transform; }
+.mm-flicker { animation: mm-flicker 7s linear infinite; }
+.mm-typewriter {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 2px solid rgba(255,255,255,0.7);
+  animation:
+    mm-type 900ms steps(14, end) 1 both,
+    mm-caret 700ms step-end infinite;
+}
+
+.mm-grant { animation: mm-grant-flicker 900ms linear both; }
+.mm-shake { animation: mm-shake 500ms ease-in-out both; }
+.mm-flash { animation: mm-flash 420ms ease-out both; }
+
