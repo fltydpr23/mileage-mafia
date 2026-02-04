@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body {
+html, body { height: 100%;
   background: #0a0a0a;
 }
 
@@ -101,3 +101,102 @@ html, body {
 .mm-shake { animation: mm-shake 500ms ease-in-out both; }
 .mm-flash { animation: mm-flash 420ms ease-out both; }
 
+/* ================================
+   Noir TV Static + Scanlines + Subtle Blooms
+   (for password / auth screens)
+   ================================ */
+
+/* Slow noir bloom drift (subtle) */
+@keyframes noirBloomDrift {
+  0%   { transform: translate3d(-1.2%, -0.8%, 0) scale(1.03); }
+  50%  { transform: translate3d(1.2%, 0.8%, 0) scale(1.05); }
+  100% { transform: translate3d(-0.9%, 1.0%, 0) scale(1.04); }
+}
+
+/* Very light “exposure breathing” */
+@keyframes noirBreath {
+  0%, 100% { opacity: 0.92; }
+  50% { opacity: 1; }
+}
+
+/* Noise drift (micro shifts) */
+@keyframes noirNoiseShift {
+  0%   { transform: translate3d(0,0,0); }
+  25%  { transform: translate3d(-0.4%, 0.2%, 0); }
+  50%  { transform: translate3d(0.4%, -0.2%, 0); }
+  75%  { transform: translate3d(-0.2%, -0.4%, 0); }
+  100% { transform: translate3d(0.2%, 0.4%, 0); }
+}
+
+/* Scanline roll (slow) */
+@keyframes noirScan {
+  0%   { transform: translateY(-8%); }
+  100% { transform: translateY(8%); }
+}
+
+/* Slight CRT wobble (brightness) */
+@keyframes noirCRT {
+  0%, 100% { opacity: 1; }
+  35% { opacity: 0.94; }
+  55% { opacity: 0.99; }
+  80% { opacity: 0.96; }
+}
+
+/* ✅ Layer: SUBTLE noir blooms (NO neon colors) */
+.noir-blooms {
+  background:
+    radial-gradient(900px circle at 18% 18%, rgba(255,255,255,0.035), transparent 62%),
+    radial-gradient(900px circle at 85% 12%, rgba(244, 63, 94, 0.045), transparent 64%),
+    radial-gradient(1000px circle at 55% 115%, rgba(245, 158, 11, 0.035), transparent 68%),
+    radial-gradient(700px circle at 45% 55%, rgba(255,255,255,0.02), transparent 60%);
+  animation: noirBloomDrift 16s ease-in-out infinite;
+  transform: translate3d(0,0,0);
+  filter: saturate(0.8) contrast(1.05);
+}
+
+/* ✅ Layer: gentle “breath” (apply on a wrapper if you want) */
+.noir-breath {
+  animation: noirBreath 6.5s ease-in-out infinite;
+}
+
+/* ✅ Layer: static/grain (toned down) */
+.noir-noise {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.42'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+  animation: noirNoiseShift 0.7s steps(2) infinite;
+}
+
+/* ✅ Layer: scanlines (subtle) */
+.noir-scanlines {
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255,255,255,0.04) 0px,
+    rgba(255,255,255,0.04) 1px,
+    transparent 2px,
+    transparent 5px
+  );
+  animation: noirScan 8s linear infinite;
+}
+
+/* ✅ Optional: subtle CRT wobble */
+.noir-crt {
+  animation: noirCRT 5.2s ease-in-out infinite;
+}
+
+/* ✅ Optional: tiny shimmer band (feels like old display, very subtle) */
+@keyframes noirShimmer {
+  0% { transform: translateY(-120%); opacity: 0; }
+  10% { opacity: 0.10; }
+  50% { opacity: 0.06; }
+  100% { transform: translateY(120%); opacity: 0; }
+}
+.noir-shimmer {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(255,255,255,0.06),
+    transparent
+  );
+  animation: noirShimmer 9s linear infinite;
+  mix-blend-mode: overlay;
+}

@@ -1,5 +1,6 @@
 import ProgressRing from "@/components/ProgressRing";
 import WeeklyBars from "@/components/WeeklyBars";
+import RunnerCharts from "@/components/RunnerCharts";
 import { getSheet } from "@/lib/sheets";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,70 @@ function fmtKm(n: number) {
 function isBlankKmCell(s: string) {
   const t = String(s ?? "").trim();
   return t === "" || t === "-" || t === "—";
+}
+
+function clamp(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function median(nums: number[]) {
+  const arr = nums.filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  const n = arr.length;
+  if (!n) return 0;
+  const mid = Math.floor(n / 2);
+  return n % 2 === 1 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+}
+
+// --- Date helpers (server-safe + deterministic)
+function isLeapYear(y: number) {
+  return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+}
+function dayOfYear(d: Date) {
+  const start = new Date(d.getFullYear(), 0, 1);
+  const diff = d.getTime() - start.getTime();
+  return Math.floor(diff / 86400000) + 1;
+}
+function addDays(d: Date, days: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + days);
+  return x;
+}
+function fmtDate(d: Date) {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][
+    d.getMonth()
+  ];
+  const y = d.getFullYear();
+
+  const now = new Date();
+  const thisYear = now.getFullYear();
+
+  return y === thisYear ? `${dd} ${mon}` : `${dd} ${mon} ${y}`;
+}
+
+// Accepts dd/mm/yyyy, dd-mm-yyyy, or Google serial numbers (e.g., 46055)
+function parseSheetDate(v: any): Date | null {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+
+  // serial number
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const serial = Number(s);
+    if (!Number.isFinite(serial)) return null;
+    // Google Sheets: days since 1899-12-30
+    const base = new Date(Date.UTC(1899, 11, 30));
+    base.setUTCDate(base.getUTCDate() + Math.floor(serial));
+    return new Date(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate());
+  }
+
+  // dd/mm/yyyy or dd-mm-yyyy
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (!m) return null;
+  const dd = Number(m[1]);
+  const mm = Number(m[2]);
+  const yyyy = Number(m[3]);
+  const d = new Date(yyyy, mm - 1, dd);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 /**
@@ -89,21 +154,14 @@ const MAFIA_LEVELS = [
 ] as const;
 
 function getMafiaLevel(km: number) {
-  return (
-    MAFIA_LEVELS.find((l) => km >= l.minKm) ??
-    MAFIA_LEVELS[MAFIA_LEVELS.length - 1]
-  );
+  return MAFIA_LEVELS.find((l) => km >= l.minKm) ?? MAFIA_LEVELS[MAFIA_LEVELS.length - 1];
 }
 
-/**
- * Progress within current tier band (current.minKm -> next.minKm)
- */
 function getTierProgress(km: number) {
   const idx = MAFIA_LEVELS.findIndex((l) => km >= l.minKm);
-  const current =
-    idx >= 0 ? MAFIA_LEVELS[idx] : MAFIA_LEVELS[MAFIA_LEVELS.length - 1];
-
+  const current = idx >= 0 ? MAFIA_LEVELS[idx] : MAFIA_LEVELS[MAFIA_LEVELS.length - 1];
   const next = idx > 0 ? MAFIA_LEVELS[idx - 1] : null;
+
   const curMin = current.minKm;
   const nextMin = next ? next.minKm : curMin;
 
@@ -116,11 +174,7 @@ function getTierProgress(km: number) {
   return { current, next, pct, kmToNext, curMin, nextMin };
 }
 
-export default async function RunnerPage({
-  params,
-}: {
-  params: Promise<{ name: string }>;
-}) {
+export default async function RunnerPage({ params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
 
   const urlName = decodeURIComponent(name);
@@ -146,18 +200,17 @@ export default async function RunnerPage({
     },
     { name: "", pct: -1 }
   );
-
   const isBonusLeader = runner && norm(runner.name) === norm(leader.name);
 
   if (!runner) {
     return (
       <div className="min-h-screen bg-neutral-950 text-white p-10 space-y-4">
         <h1 className="text-2xl font-bold">Runner not found</h1>
-        <p className="text-neutral-400">
+        <div className="text-neutral-400">
           URL name: <span className="text-white">{urlName}</span>
-        </p>
-        <p className="text-neutral-400">First 10 names in API_Leaderboard:</p>
-        <ul className="list-disc pl-6 space-y-1">
+        </div>
+        <div className="text-neutral-400">First 10 names in API_Leaderboard:</div>
+        <ul className="list-disc pl-6 space-y-1 text-neutral-300">
           {rows.slice(0, 10).map((r, i) => (
             <li key={`${r.name}-${i}`}>{r.name || "(blank)"}</li>
           ))}
@@ -168,7 +221,6 @@ export default async function RunnerPage({
 
   // Name | Week# | WeekStart | WeekEnd | WeeklyKM
   const weeklyRaw = await getSheet("API_Weekly!A2:E3307");
-
   const weekly = (weeklyRaw ?? [])
     .map((r) => {
       const kmRaw = String(r?.[4] ?? "").trim();
@@ -183,7 +235,7 @@ export default async function RunnerPage({
     })
     .filter((w) => norm(w.name) === routeName)
     .filter((w) => w.weekNum > 0)
-    .filter((w) => !isBlankKmCell(w.kmRaw)) // ignore blank current week
+    .filter((w) => !isBlankKmCell(w.kmRaw))
     .sort((a, b) => a.weekNum - b.weekNum);
 
   // ===== COMPUTE =====
@@ -191,38 +243,109 @@ export default async function RunnerPage({
   const level = getMafiaLevel(runner.yearlyKm);
   const tier = getTierProgress(runner.yearlyKm);
 
-  const minRequired = Math.round(runner.annualTarget * 0.85);
+  const annualTarget = runner.annualTarget > 0 ? runner.annualTarget : 0;
+  const weeklyTarget = runner.weeklyTarget > 0 ? runner.weeklyTarget : 0;
+
+  const minRequired = Math.round(annualTarget * 0.85);
   const kmToSafety = Math.max(0, minRequired - runner.yearlyKm);
 
   const activeWeeks = weekly.length;
 
-  // 🔥 Running streak: consecutive weeks with ANY KM > 0
+  // ===== Chart data: weekly km + roll4 + cumulative + expected cumulative =====
+  const today = new Date();
+  const yearNow = today.getFullYear();
+  const totalDaysNow = isLeapYear(yearNow) ? 366 : 365;
+
+  let cum = 0;
+
+  const chartData = weekly.map((w, i) => {
+    cum += w.km;
+
+    const start = Math.max(0, i - 3);
+    const window = weekly.slice(start, i + 1);
+    const roll4 = window.reduce((s, x) => s + x.km, 0) / Math.max(1, window.length);
+
+    const endDate = parseSheetDate(w.weekEnd) ?? parseSheetDate(w.weekStart);
+    const y = (endDate ?? today).getFullYear();
+    const totalDays = isLeapYear(y) ? 366 : 365;
+    const doy = endDate ? dayOfYear(endDate) : Math.min(totalDays, (i + 1) * 7);
+
+    const expectedCum = annualTarget > 0 ? (annualTarget * doy) / totalDays : 0;
+
+    return {
+      week: `W${w.weekNum}`,
+      km: w.km,
+      hit: (weeklyTarget > 0 && w.km >= weeklyTarget ? 1 : 0) as 0 | 1,
+      roll4,
+      cum,
+      expectedCum,
+    };
+  });
+
+  // 🔥 Running streak: consecutive completed weeks with ANY km > 0
   let runStreak = 0;
   for (let i = weekly.length - 1; i >= 0; i--) {
     if (weekly[i].km > 0) runStreak++;
     else break;
   }
 
-  // 🎯 Target hit rate: weeks meeting/exceeding weekly target
-  const hitWeeks = weekly.filter((w) => w.km >= runner.weeklyTarget).length;
-  const targetHitRate = activeWeeks ? (hitWeeks / activeWeeks) * 100 : 0;
+  // 🎯 Target hit rate
+  const hitWeeks = weeklyTarget > 0 ? weekly.filter((w) => w.km >= weeklyTarget).length : 0;
+  const targetHitRate = activeWeeks && weeklyTarget > 0 ? (hitWeeks / activeWeeks) * 100 : 0;
 
-  // Best / worst (only completed weeks)
   const bestWeek =
-    activeWeeks > 0
-      ? weekly.reduce((best, w) => (w.km > best.km ? w : best), weekly[0])
-      : null;
+    activeWeeks > 0 ? weekly.reduce((best, w) => (w.km > best.km ? w : best), weekly[0]) : null;
 
   const worstWeek =
-    activeWeeks > 0
-      ? weekly.reduce((worst, w) => (w.km < worst.km ? w : worst), weekly[0])
-      : null;
+    activeWeeks > 0 ? weekly.reduce((worst, w) => (w.km < worst.km ? w : worst), weekly[0]) : null;
 
-  // Bars data (last 12 completed weeks)
   const weeklyBars = weekly.slice(-12).map((w) => ({
     label: `W${w.weekNum}`,
     km: w.km,
   }));
+
+  // ===== Days ahead/behind (linear plan to annual target) =====
+  const doyNow = dayOfYear(today);
+  const requiredKmPerDay = annualTarget > 0 ? annualTarget / totalDaysNow : 0;
+  const expectedKmByToday = annualTarget > 0 ? annualTarget * (doyNow / totalDaysNow) : 0;
+  const kmDelta = runner.yearlyKm - expectedKmByToday;
+  const daysAheadBehind = requiredKmPerDay > 0 ? kmDelta / requiredKmPerDay : 0;
+
+  const daysBadge =
+    requiredKmPerDay <= 0
+      ? { label: "—", sub: "Set annual target" }
+      : daysAheadBehind >= 0
+      ? { label: `${Math.round(daysAheadBehind)} days ahead`, sub: `+${fmtKm(kmDelta)} km vs plan` }
+      : { label: `${Math.abs(Math.round(daysAheadBehind))} days behind`, sub: `${fmtKm(kmDelta)} km vs plan` };
+
+  // ===== Projected completion date (median-based, less sensitive to spikes) =====
+  const N = 6;
+  const recentWeeks = weekly.slice(-N);
+  const recentWeekKms = recentWeeks.map((w) => w.km).filter((k) => k > 0);
+
+  let medianWeekly = median(recentWeekKms);
+
+  // guardrail: if weeklyTarget exists, cap median to avoid silly projections
+  if (weeklyTarget > 0) {
+    medianWeekly = Math.min(medianWeekly, weeklyTarget * 2.5);
+  }
+
+  const kmPerDayMedian = medianWeekly / 7;
+  const paceSoFarKmPerDay = doyNow > 0 ? runner.yearlyKm / doyNow : 0;
+
+  const kmPerDay = recentWeekKms.length >= 3 ? kmPerDayMedian : paceSoFarKmPerDay;
+
+  const remainingKm = Math.max(0, annualTarget - runner.yearlyKm);
+
+  const projectedDays =
+    annualTarget > 0 && kmPerDay > 0.05 ? Math.ceil(remainingKm / kmPerDay) : null;
+
+  const projectedDate = projectedDays ? addDays(today, projectedDays) : null;
+
+  const projectionNote =
+    recentWeekKms.length >= 3
+      ? `Median of last ${Math.min(N, recentWeekKms.length)} weeks: ~${fmtKm(medianWeekly)} km/wk`
+      : `Using pace so far: ~${fmtKm(kmPerDay * 7)} km/wk`;
 
   // ===== RENDER =====
   return (
@@ -235,91 +358,63 @@ export default async function RunnerPage({
         ) : null}
 
         <div className="flex items-end justify-between gap-6">
-          <h1 className="text-6xl font-black tracking-tight">{runner.name}</h1>
+          <h1 className="text-5xl sm:text-6xl font-black tracking-tight">{runner.name}</h1>
           <div className="text-neutral-400 text-lg">
             Rank <span className="text-white font-bold">#{runner.rank}</span>
           </div>
         </div>
 
         {/* HERO */}
-        <section
-          className={`rounded-3xl p-10 ring-1 bg-neutral-900/70 ${level.cardBg} ${level.cardRing}`}
-        >
-          <div className="flex items-start justify-between gap-10">
+        <section className={`rounded-3xl p-10 ring-1 bg-neutral-900/70 ${level.cardBg} ${level.cardRing}`}>
+          <div className="flex flex-col sm:flex-row items-start justify-between gap-10">
             <div>
               <div className="text-neutral-300/80 text-sm mb-2">Yearly KM</div>
 
-              <div
-                className={`text-6xl font-black tabular-nums leading-none ${level.accentText}`}
-              >
+              <div className={`text-6xl font-black tabular-nums leading-none ${level.accentText}`}>
                 {fmtKm(runner.yearlyKm)}
                 <span className="text-xl text-neutral-300/70 ml-2">km</span>
               </div>
 
-              <div
-                className={`inline-flex items-center gap-2 mt-5 px-4 py-2 rounded-full ${level.badge}`}
-              >
-                <span className="text-xs uppercase tracking-wider opacity-80">
-                  Mafia Level
-                </span>
+              <div className={`inline-flex items-center gap-2 mt-5 px-4 py-2 rounded-full ${level.badge}`}>
+                <span className="text-xs uppercase tracking-wider opacity-80">Mafia Level</span>
                 <span className="opacity-70">•</span>
                 <span className="font-extrabold">{level.name}</span>
               </div>
             </div>
 
             <div className="flex items-center justify-end">
-              <ProgressRing
-                value={pct}
-                size={130}
-                stroke={10}
-                sublabel="Completion"
-                color={level.ringColor}
-              />
+              <ProgressRing value={pct} size={130} stroke={10} sublabel="Completion" color={level.ringColor} />
             </div>
           </div>
 
-          {/* completion bar */}
           <div className="mt-10">
             <div className="h-3 bg-neutral-900/60 rounded-full overflow-hidden">
-              <div
-                className={`h-full ${level.accentBar}`}
-                style={{ width: `${Math.min(Math.max(pct, 0), 100)}%` }}
-              />
+              <div className={`h-full ${level.accentBar}`} style={{ width: `${clamp(pct, 0, 100)}%` }} />
             </div>
 
             <div className="text-neutral-300/80 text-sm mt-4">
-              Annual target:{" "}
-              <span className="text-white font-semibold">
-                {fmtKm(runner.annualTarget)} km
+              <span>
+                Annual target: <span className="text-white font-semibold">{fmtKm(annualTarget)} km</span>
               </span>
-              {" • "}
-              85% safety:{" "}
-              <span className="text-white font-semibold">
-                {fmtKm(minRequired)} km
+              <span className="text-neutral-500"> {" • "} </span>
+              <span>
+                85% safety: <span className="text-white font-semibold">{fmtKm(minRequired)} km</span>
               </span>
-              {" • "}
-              To safety:{" "}
-              <span className="text-white font-semibold">
-                {fmtKm(kmToSafety)} km
+              <span className="text-neutral-500"> {" • "} </span>
+              <span>
+                To safety: <span className="text-white font-semibold">{fmtKm(kmToSafety)} km</span>
               </span>
             </div>
 
-            {/* Next level progress (NOT inside a <p>) */}
+            {/* Next level progress */}
             <div className="mt-6">
-              <div className="flex items-end justify-between gap-4">
-                <div className="text-neutral-300 font-semibold">
-                  Hierarchy progress
-                </div>
+              <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+                <div className="text-neutral-300 font-semibold">Hierarchy progress</div>
 
                 {tier.next ? (
                   <div className="text-neutral-400 text-sm">
-                    <span className="text-white font-semibold tabular-nums">
-                      {fmtKm(tier.kmToNext)}
-                    </span>{" "}
-                    km to{" "}
-                    <span className="text-white font-semibold">
-                      {tier.next.name}
-                    </span>
+                    <span className="text-white font-semibold tabular-nums">{fmtKm(tier.kmToNext)}</span>{" "}
+                    km to <span className="text-white font-semibold">{tier.next.name}</span>
                   </div>
                 ) : (
                   <div className="text-neutral-400 text-sm">
@@ -329,25 +424,19 @@ export default async function RunnerPage({
               </div>
 
               <div className="mt-3 h-3 bg-neutral-900/60 rounded-full overflow-hidden">
-                <div
-                  className={`h-full ${level.accentBar}`}
-                  style={{ width: `${tier.pct}%` }}
-                />
+                <div className={`h-full ${level.accentBar}`} style={{ width: `${tier.pct}%` }} />
               </div>
 
               <div className="mt-3 text-neutral-500 text-xs">
                 {tier.next ? (
-                  <>
-                    Progress inside{" "}
-                    <span className="text-neutral-300">{tier.current.name}</span>{" "}
-                    ({tier.curMin} → {tier.nextMin} km)
-                  </>
+                  <span>
+                    Progress inside <span className="text-neutral-300">{tier.current.name}</span> ({tier.curMin} →{" "}
+                    {tier.nextMin} km)
+                  </span>
                 ) : (
-                  <>
-                    You’re at{" "}
-                    <span className="text-neutral-300">{tier.current.name}</span>{" "}
-                    ({tier.curMin}+ km)
-                  </>
+                  <span>
+                    You’re at <span className="text-neutral-300">{tier.current.name}</span> ({tier.curMin}+ km)
+                  </span>
                 )}
               </div>
             </div>
@@ -356,44 +445,48 @@ export default async function RunnerPage({
 
         {/* METRICS */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          <Stat
-            label="Weekly Target"
-            value={
-              runner.weeklyTarget ? `${fmtKm(runner.weeklyTarget)} km` : "—"
-            }
-          />
+          <Stat label="Weekly Target" value={weeklyTarget ? `${fmtKm(weeklyTarget)} km` : "—"} />
           <Stat label="Active Weeks" value={String(activeWeeks)} />
           <Stat label="🔥 Running Streak" value={`${runStreak} weeks`} />
-          <Stat label="🎯 Target Hit Rate" value={`${targetHitRate.toFixed(0)}%`} />
+          <Stat label="🎯 Target Hit Rate" value={weeklyTarget ? `${targetHitRate.toFixed(0)}%` : "—"} />
+          <Stat label="⏱️ Pace vs Plan" value={daysBadge.label} sub={daysBadge.sub} />
           <Stat
-            label="📈 Best Week"
-            value={bestWeek ? `W${bestWeek.weekNum} • ${fmtKm(bestWeek.km)} km` : "—"}
+            label="📅 Projected Finish"
+            value={projectedDate ? fmtDate(projectedDate) : annualTarget > 0 ? "—" : "Set annual target"}
+            sub={projectedDate ? projectionNote : annualTarget > 0 ? "Need more weekly data" : ""}
           />
-          <Stat
-            label="📉 Worst Week"
-            value={worstWeek ? `W${worstWeek.weekNum} • ${fmtKm(worstWeek.km)} km` : "—"}
-          />
+          <Stat label="📈 Best Week" value={bestWeek ? `W${bestWeek.weekNum} • ${fmtKm(bestWeek.km)} km` : "—"} />
+          <Stat label="📉 Worst Week" value={worstWeek ? `W${worstWeek.weekNum} • ${fmtKm(worstWeek.km)} km` : "—"} />
         </section>
 
         {/* WEEKLY BARS */}
         <section className="bg-neutral-900/70 rounded-3xl p-8 ring-1 ring-neutral-800">
-          <div className="text-neutral-400 text-xs uppercase tracking-wider">
-            Trend
-          </div>
-          <h2 className="text-xl font-bold mt-2">Last 12 completed weeks</h2>
+          <div className="text-neutral-400 text-xs uppercase tracking-wider">Trend</div>
+          <div className="text-xl font-bold mt-2">Last 12 completed weeks</div>
 
           <div className="mt-6">
-            <WeeklyBars
-              data={weeklyBars}
-              target={runner.weeklyTarget}
-              colorClass={level.accentBar}
-            />
+            <WeeklyBars data={weeklyBars} target={weeklyTarget} colorClass={level.accentBar} />
           </div>
 
           {weekly.length === 0 ? (
-            <div className="text-neutral-500 text-sm mt-4">
-              No completed weekly data found yet for this runner.
+            <div className="text-neutral-500 text-sm mt-4">No completed weekly data found yet for this runner.</div>
+          ) : null}
+        </section>
+
+        {/* CHARTS */}
+        <section className="space-y-4">
+          <div>
+            <div className="text-neutral-400 text-xs uppercase tracking-wider">Analytics</div>
+            <div className="text-2xl font-bold mt-2">Graphs</div>
+            <div className="text-neutral-500 text-sm mt-1">
+              Weekly KM + rolling average + <span className="text-neutral-300">cumulative vs expected</span>.
             </div>
+          </div>
+
+          <RunnerCharts data={chartData.slice(-16)} weeklyTarget={weeklyTarget} />
+
+          {chartData.length === 0 ? (
+            <div className="text-neutral-500 text-sm">Add weekly KM rows in Sheets to unlock graphs.</div>
           ) : null}
         </section>
       </div>
@@ -401,11 +494,12 @@ export default async function RunnerPage({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="bg-neutral-900 rounded-3xl p-8 ring-1 ring-neutral-800">
       <div className="text-neutral-400 text-sm mb-2">{label}</div>
       <div className="text-3xl font-bold tabular-nums">{value}</div>
+      {sub ? <div className="mt-2 text-xs text-neutral-500">{sub}</div> : null}
     </div>
   );
 }

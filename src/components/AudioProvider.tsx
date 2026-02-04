@@ -21,8 +21,14 @@ type AudioCtx = {
   tracks: Track[];
   current: Track;
   playing: boolean;
+
   volume: number;
   setVolume: (v: number) => void;
+
+  currentTime: number;
+  duration: number;
+  seek: (seconds: number) => void;
+
   play: () => Promise<void>;
   pause: () => void;
   toggle: () => Promise<void>;
@@ -39,12 +45,23 @@ export function useAudio() {
   return ctx;
 }
 
-export default function AudioProvider({ children }: { children: React.ReactNode }) {
+function clamp(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+export default function AudioProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [trackId, setTrackId] = useState(TRACKS[0].id);
   const [playing, setPlaying] = useState(false);
   const [volume, setVolumeState] = useState(0.7);
+
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   const current = useMemo(
     () => TRACKS.find((t) => t.id === trackId) ?? TRACKS[0],
@@ -55,9 +72,39 @@ export default function AudioProvider({ children }: { children: React.ReactNode 
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
-    a.volume = Math.max(0, Math.min(1, volume));
+    a.volume = clamp(volume, 0, 1);
     a.muted = false;
   }, [volume]);
+
+  // Keep time + duration in sync
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+
+    const onTime = () => setCurrentTime(a.currentTime || 0);
+    const onMeta = () => setDuration(Number.isFinite(a.duration) ? a.duration : 0);
+    const onDuration = () => setDuration(Number.isFinite(a.duration) ? a.duration : 0);
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+
+    a.addEventListener("timeupdate", onTime);
+    a.addEventListener("loadedmetadata", onMeta);
+    a.addEventListener("durationchange", onDuration);
+    a.addEventListener("play", onPlay);
+    a.addEventListener("pause", onPause);
+
+    // initialize (in case metadata is already available)
+    onMeta();
+    onTime();
+
+    return () => {
+      a.removeEventListener("timeupdate", onTime);
+      a.removeEventListener("loadedmetadata", onMeta);
+      a.removeEventListener("durationchange", onDuration);
+      a.removeEventListener("play", onPlay);
+      a.removeEventListener("pause", onPause);
+    };
+  }, []);
 
   // Change track; keep playing if already playing
   useEffect(() => {
@@ -65,9 +112,15 @@ export default function AudioProvider({ children }: { children: React.ReactNode 
     if (!a) return;
 
     const wasPlaying = playing;
+
+    // reset UI state immediately for better UX
+    setCurrentTime(0);
+    setDuration(0);
+
     a.src = current.src;
     a.load();
 
+    // When you load a new src, browser may briefly pause — respect wasPlaying
     if (wasPlaying) {
       a.play()
         .then(() => setPlaying(true))
@@ -76,7 +129,7 @@ export default function AudioProvider({ children }: { children: React.ReactNode 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current.id]);
 
-  // Auto-advance when a track ends
+  // Auto-advance when a track ends (also continues playback naturally)
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
@@ -95,7 +148,8 @@ export default function AudioProvider({ children }: { children: React.ReactNode 
     const a = audioRef.current;
     if (!a) return;
     a.muted = false;
-    a.volume = Math.max(0, Math.min(1, volume));
+    a.volume = clamp(volume, 0, 1);
+
     try {
       await a.play();
       setPlaying(true);
@@ -131,12 +185,29 @@ export default function AudioProvider({ children }: { children: React.ReactNode 
     if (TRACKS.some((t) => t.id === id)) setTrackId(id);
   }
 
+  function seek(seconds: number) {
+    const a = audioRef.current;
+    if (!a) return;
+
+    const d = Number.isFinite(a.duration) ? a.duration : duration;
+    const nextT = clamp(seconds, 0, d > 0 ? d : seconds);
+
+    a.currentTime = nextT;
+    setCurrentTime(nextT);
+  }
+
   const value: AudioCtx = {
     tracks: TRACKS,
     current,
     playing,
+
     volume,
     setVolume: setVolumeState,
+
+    currentTime,
+    duration,
+    seek,
+
     play,
     pause,
     toggle,

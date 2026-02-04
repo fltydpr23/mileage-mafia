@@ -2,9 +2,7 @@ import Link from "next/link";
 import { getSheet } from "@/lib/sheets";
 import NowPlaying from "@/components/NowPlaying";
 
-
 export const dynamic = "force-dynamic";
-
 
 function toNum(v: any) {
   const n = parseFloat(String(v ?? "").replace(/[^0-9.-]/g, ""));
@@ -18,7 +16,6 @@ function toPercent(v: any) {
 function slugifyName(name: string) {
   return encodeURIComponent(name.trim());
 }
-
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   const a = parts[0]?.[0] ?? "";
@@ -34,6 +31,7 @@ const MAFIA_LEVELS = [
     tint: "bg-amber-500/10 ring-amber-300/25",
     bar: "bg-amber-300",
     desc: "1500+ km",
+  
   },
   {
     minKm: 1000,
@@ -42,6 +40,7 @@ const MAFIA_LEVELS = [
     tint: "bg-rose-500/10 ring-rose-300/25",
     bar: "bg-rose-300",
     desc: "1000–1499 km",
+    
   },
   {
     minKm: 500,
@@ -50,6 +49,7 @@ const MAFIA_LEVELS = [
     tint: "bg-emerald-500/10 ring-emerald-300/25",
     bar: "bg-emerald-300",
     desc: "500–999 km",
+    
   },
   {
     minKm: 250,
@@ -58,6 +58,7 @@ const MAFIA_LEVELS = [
     tint: "bg-sky-500/10 ring-sky-300/25",
     bar: "bg-sky-300",
     desc: "250–499 km",
+    
   },
   {
     minKm: 0,
@@ -66,12 +67,15 @@ const MAFIA_LEVELS = [
     tint: "bg-zinc-500/10 ring-zinc-300/20",
     bar: "bg-zinc-300",
     desc: "0–249 km",
+    
   },
 ] as const;
 
-
 function getMafiaLevel(km: number) {
-  return MAFIA_LEVELS.find((l) => km >= l.minKm) ?? MAFIA_LEVELS[MAFIA_LEVELS.length - 1];
+  return (
+    MAFIA_LEVELS.find((l) => km >= l.minKm) ??
+    MAFIA_LEVELS[MAFIA_LEVELS.length - 1]
+  );
 }
 
 export default async function LeaderboardPage() {
@@ -97,29 +101,37 @@ export default async function LeaderboardPage() {
   const pot = totalRunners * 1000;
 
   const totalKm = rows.reduce((s, r) => s + r.yearlyKm, 0);
-  const avgCompletion = totalRunners ? rows.reduce((s, r) => s + r.completion, 0) / totalRunners : 0;
+  const avgCompletion = totalRunners
+    ? rows.reduce((s, r) => s + r.completion, 0) / totalRunners
+    : 0;
 
   const leader = [...rows].sort((a, b) => b.completion - a.completion)[0];
   const leaderLvl = leader ? getMafiaLevel(leader.yearlyKm) : null;
+
+  // Height of sticky app header (nav)
+  const APP_HEADER_H = 72; // px
+  // Height of sticky list header (# Runner KM %)
+  const LIST_HEADER_H = 56; // px
 
   return (
     <main className="min-h-screen text-white bg-neutral-950">
       {/* App background glow */}
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(900px_circle_at_20%_-10%,rgba(255,255,255,0.08),transparent_60%),radial-gradient(900px_circle_at_90%_0%,rgba(16,185,129,0.10),transparent_55%),radial-gradient(900px_circle_at_60%_110%,rgba(244,63,94,0.10),transparent_55%)]" />
-{/* DEBUG: force visible */}
-    
-      <NowPlaying />
-  
 
       {/* Top Nav (sticky) */}
-      <header className="sticky top-0 z-30 backdrop-blur-xl bg-neutral-950/70 border-b border-neutral-900">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-white/10 ring-1 ring-white/10 flex items-center justify-center font-black">
+      <header className="sticky top-0 z-40 backdrop-blur-xl bg-neutral-950/70 border-b border-neutral-900">
+        <div
+          className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3"
+          style={{ minHeight: APP_HEADER_H }}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-10 w-10 rounded-2xl bg-white/10 ring-1 ring-white/10 flex items-center justify-center font-black shrink-0">
               MM
             </div>
-            <div className="leading-tight">
-              <p className="font-black tracking-tight text-lg">Mileage Mafia</p>
+            <div className="leading-tight min-w-0">
+              <p className="font-black tracking-tight text-base sm:text-lg truncate">
+                Mileage Mafia
+              </p>
               <p className="text-neutral-400 text-xs">Leaderboard</p>
             </div>
           </div>
@@ -131,24 +143,31 @@ export default async function LeaderboardPage() {
         </div>
       </header>
 
-      {/* Body */}
-      <div className="relative max-w-6xl mx-auto px-6 py-10 space-y-10">
-        {/* Hero card */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-8 md:p-10">
-            <div className="flex items-start justify-between gap-6">
+      {/* ✅ Body (DEADSPACE FIXED): less vertical padding + less section spacing */}
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        {/* Hero row */}
+        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+          {/* Main hero */}
+          <div className="lg:col-span-2 rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-5">
               <div className="space-y-2 min-w-0">
-                <p className="text-neutral-400 text-xs uppercase tracking-wider">Current leader</p>
-                <div className="flex items-center gap-3">
-                  <h1 className="text-3xl md:text-4xl font-black tracking-tight truncate">
+                <p className="text-neutral-400 text-xs uppercase tracking-wider">
+                  Current leader
+                </p>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight leading-tight truncate">
                     {leader ? leader.name : "—"}
                   </h1>
                   {leaderLvl ? (
-                    <span className={`px-3 py-1 rounded-full text-[11px] font-extrabold ${leaderLvl.pill}`}>
+                    <span
+                      className={`px-3 py-1 rounded-full text-[11px] font-extrabold ${leaderLvl.pill}`}
+                    >
                       {leaderLvl.name}
                     </span>
                   ) : null}
                 </div>
+
                 {leader ? (
                   <p className="text-neutral-400">
                     <span className="text-white font-semibold tabular-nums">
@@ -165,16 +184,25 @@ export default async function LeaderboardPage() {
               {leader ? (
                 <Link
                   href={`/runners/${slugifyName(leader.name)}`}
-                  className="shrink-0 px-5 py-3 rounded-full bg-white text-black font-semibold hover:opacity-90 transition"
+                  className="shrink-0 px-5 py-3 rounded-full bg-white text-black font-semibold hover:opacity-90 transition w-full sm:w-auto text-center"
                 >
-                  Open →
+                  Open runner →
                 </Link>
               ) : null}
             </div>
 
-            <div className="mt-8 space-y-3">
+            {/* ✅ slightly tighter than before */}
+            <div className="mt-5 sm:mt-6 space-y-3">
               <div className="flex items-end justify-between">
-                <p className="text-neutral-300 font-semibold">Group completion</p>
+                <div>
+                  <p className="text-neutral-300 font-semibold">
+                    Group completion
+                  </p>
+                  <p className="text-neutral-500 text-xs mt-1">
+                    Average completion across the family
+                  </p>
+                </div>
+
                 <p className="text-neutral-400 text-sm">
                   Avg{" "}
                   <span className="text-white font-semibold tabular-nums">
@@ -182,109 +210,219 @@ export default async function LeaderboardPage() {
                   </span>
                 </p>
               </div>
+
               <div className="h-3 bg-neutral-800 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-white"
-                  style={{ width: `${Math.min(Math.max(avgCompletion, 0), 100)}%` }}
+                  style={{
+                    width: `${Math.min(Math.max(avgCompletion, 0), 100)}%`,
+                  }}
                 />
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-4">
-                <MiniKpi label="Total KM logged" value={`${Math.round(totalKm).toLocaleString("en-IN")} km`} />
-                <MiniKpi label="Prize pool" value={`₹${pot.toLocaleString("en-IN")}`} />
-                <MiniKpi label="House rule" value="Sheet is truth" />
+              {/* ✅ DEADSPACE FIX: smaller top padding + smaller gaps */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 pt-2">
+                <MiniKpi
+                  label="Total KM logged"
+                  value={`${Math.round(totalKm).toLocaleString("en-IN")} km`}
+                />
+                <MiniKpi
+                  label="Prize pool"
+                  value={`₹${pot.toLocaleString("en-IN")}`}
+                />
+                <MiniKpi label="House rule" value="Respect the oath." />
               </div>
             </div>
           </div>
 
-          {/* Side card: hierarchy */}
-          <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-8 md:p-10">
-            <p className="text-neutral-400 text-xs uppercase tracking-wider">Hierarchy</p>
+          {/* Side hero: hierarchy */}
+          <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10">
+            <p className="text-neutral-400 text-xs uppercase tracking-wider">
+              Hierarchy
+            </p>
             <h2 className="text-xl font-bold mt-2">Family levels</h2>
+            <p className="text-neutral-500 text-sm mt-2">
+              Levels are based on{" "}
+              <span className="text-neutral-300">yearly KM</span>.
+            </p>
 
-            <div className="mt-6 space-y-3">
+            <div className="mt-6 space-y-4">
               {MAFIA_LEVELS.map((lvl) => {
-  const count = rows.filter((r) => getMafiaLevel(r.yearlyKm).name === lvl.name).length;
+                const count = rows.filter(
+                  (r) => getMafiaLevel(r.yearlyKm).name === lvl.name
+                ).length;
 
-  return (
-    <div key={lvl.name} className="flex items-start justify-between gap-4">
-      <div className="min-w-0">
-        <div className="flex items-center gap-3">
-          <span className={`px-3 py-1 rounded-full text-[11px] font-extrabold ${lvl.pill}`}>
-            {lvl.name}
-          </span>
-          <span className="text-neutral-500 text-xs">{lvl.desc}</span>
-        </div>
-      </div>
+                return (
+                  <div
+                    key={lvl.name}
+                    className="flex items-start justify-between gap-4"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`px-3 py-1 rounded-full text-[11px] font-extrabold ${lvl.pill}`}
+                        >
+                          {lvl.name}
+                        </span>
+                        <span className="text-neutral-500 text-xs">
+                          {lvl.desc}
+                        </span>
+                      </div>
+                      <div className="text-neutral-500 text-xs mt-2 leading-relaxed">
+                        
+                      </div>
+                    </div>
 
-      <span className="text-white font-semibold tabular-nums">{count}</span>
-    </div>
-  );
-})}
-
+                    <span className="text-white font-semibold tabular-nums">
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
 
-            <p className="mt-6 text-neutral-500 text-xs">Levels based on yearly KM.</p>
+            <p className="mt-6 text-neutral-600 text-xs">
+              Pro tip: consistency beats hero weeks.
+            </p>
           </div>
         </section>
 
-        {/* List section header */}
-        <div className="flex items-end justify-between">
+        {/* ✅ DEADSPACE FIX: tighter header block */}
+        <div className="flex items-end justify-between gap-4">
           <div>
-            <p className="text-neutral-400 text-xs uppercase tracking-wider">Leaderboard</p>
-            <h3 className="text-2xl font-bold mt-2">Runners</h3>
+            <p className="text-neutral-400 text-xs uppercase tracking-wider">
+              Leaderboard
+            </p>
+            {/* was mt-2, make it mt-1 */}
+            <h3 className="text-xl sm:text-2xl font-bold mt-1">Runners</h3>
           </div>
-          <p className="text-neutral-500 text-sm">
-            Sorted by {sorted.some((r) => r.rank) ? "rank" : "completion"}
+          <p className="text-neutral-500 text-sm text-right">
+            Sorted by{" "}
+            <span className="text-neutral-300">
+              {sorted.some((r) => r.rank) ? "rank" : "completion"}
+            </span>
           </p>
         </div>
 
-        {/* App-like list */}
+        {/* List */}
         <section className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 overflow-hidden">
-          {/* sticky list header */}
-          <div className="sticky top-[72px] z-20 bg-neutral-950/60 backdrop-blur-xl border-b border-neutral-800">
-            <div className="grid grid-cols-12 gap-4 px-6 md:px-8 py-4 text-xs uppercase tracking-wider text-neutral-500">
+          {/* Desktop sticky list header */}
+          <div
+            className="hidden sm:block sticky z-30 bg-neutral-950/90 backdrop-blur-xl border-b border-neutral-800"
+            style={{ top: APP_HEADER_H, height: LIST_HEADER_H }}
+          >
+            <div className="grid grid-cols-12 gap-4 px-6 md:px-8 h-full items-center text-xs uppercase tracking-wider text-neutral-500">
               <div className="col-span-1">#</div>
               <div className="col-span-6">Runner</div>
               <div className="col-span-2 text-right">KM</div>
               <div className="col-span-2 text-right">%</div>
-              <div className="col-span-1 text-right"> </div>
+              <div className="col-span-1 text-right" />
             </div>
           </div>
 
-          <div className="divide-y divide-neutral-800">
+          {/* ✅ Sai fix kept exactly as you have it */}
+          <div className="divide-y divide-neutral-800 sm:pt-[56px]">
             {sorted.map((r, idx) => {
               const lvl = getMafiaLevel(r.yearlyKm);
               const pct = Math.min(Math.max(r.completion, 0), 100);
+              const rankShown = r.rank ? r.rank : idx + 1;
 
               return (
-                <Link key={r.name} href={`/runners/${slugifyName(r.name)}`} className="block">
-                  <div className="px-6 md:px-8 py-6 hover:bg-white/5 transition">
+                <Link
+                  key={r.name}
+                  href={`/runners/${slugifyName(r.name)}`}
+                  className="block"
+                >
+                  {/* MOBILE */}
+                  <div className="sm:hidden px-4 py-5 hover:bg-white/5 transition">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`h-11 w-11 rounded-2xl ring-1 ${lvl.tint} flex items-center justify-center font-black shrink-0`}
+                        >
+                          {initials(r.name)}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="text-neutral-400 font-semibold tabular-nums">
+                              #{rankShown}
+                            </div>
+                            <div className="font-bold text-base truncate">
+                              {r.name}
+                            </div>
+                          </div>
+
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold ${lvl.pill}`}
+                            >
+                              {lvl.name}
+                            </span>
+                            <div className="text-neutral-400 text-xs tabular-nums">
+                              {Math.round(r.yearlyKm).toLocaleString("en-IN")} km
+                              {" • "}
+                              {pct.toFixed(1)}%
+                            </div>
+                          </div>
+
+                          <div className="mt-3 h-2 bg-neutral-800 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${lvl.bar}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+
+                          <div className="mt-2 text-neutral-500 text-xs">
+                            Target {Math.round(r.annualTarget)} km • Weekly{" "}
+                            {Math.round(r.weeklyTarget)} km
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-neutral-500 text-2xl leading-none">
+                        ›
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* DESKTOP */}
+                  <div className="hidden sm:block px-6 md:px-8 py-6 hover:bg-white/5 transition">
                     <div className="grid grid-cols-12 gap-4 items-center">
                       <div className="col-span-1 text-neutral-400 font-semibold tabular-nums">
-                        {r.rank ? r.rank : idx + 1}
+                        {rankShown}
                       </div>
 
                       <div className="col-span-6 min-w-0">
                         <div className="flex items-center gap-4 min-w-0">
-                          <div className={`h-11 w-11 rounded-2xl ring-1 ${lvl.tint} flex items-center justify-center font-black`}>
+                          <div
+                            className={`h-11 w-11 rounded-2xl ring-1 ${lvl.tint} flex items-center justify-center font-black`}
+                          >
                             {initials(r.name)}
                           </div>
 
-                          <div className="min-w-0">
+                          <div className="min-w-0 w-full">
                             <div className="flex items-center justify-between gap-3">
-                              <p className="font-bold text-lg truncate">{r.name}</p>
-                              <span className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold ${lvl.pill}`}>
+                              <p className="font-bold text-lg truncate">
+                                {r.name}
+                              </p>
+                              <span
+                                className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold ${lvl.pill}`}
+                              >
                                 {lvl.name}
                               </span>
                             </div>
 
                             <p className="text-neutral-500 text-sm mt-1">
-                              Target {Math.round(r.annualTarget)} km • Weekly {Math.round(r.weeklyTarget)} km
+                              Target {Math.round(r.annualTarget)} km • Weekly{" "}
+                              {Math.round(r.weeklyTarget)} km
                             </p>
 
                             <div className="mt-3 h-2 bg-neutral-800 rounded-full overflow-hidden">
-                              <div className={`h-full ${lvl.bar}`} style={{ width: `${pct}%` }} />
+                              <div
+                                className={`h-full ${lvl.bar}`}
+                                style={{ width: `${pct}%` }}
+                              />
                             </div>
                           </div>
                         </div>
@@ -320,7 +458,6 @@ export default async function LeaderboardPage() {
         </p>
       </div>
 
-      {/* ✅ Music controls (fixed overlay widget) */}
       <NowPlaying />
     </main>
   );
@@ -328,19 +465,20 @@ export default async function LeaderboardPage() {
 
 function Chip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="px-4 py-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 text-neutral-300 text-sm">
+    <div className="px-3 sm:px-4 py-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 text-neutral-300 text-xs sm:text-sm">
       <span className="text-neutral-500">{label}</span>
-      <span className="text-white font-semibold ml-2">{value}</span>
+      <span className="text-white font-semibold ml-2 tabular-nums">
+        {value}
+      </span>
     </div>
   );
 }
 
 function MiniKpi({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-neutral-950/40 ring-1 ring-neutral-800 px-5 py-4">
+    <div className="rounded-2xl bg-neutral-950/40 ring-1 ring-neutral-800 px-4 sm:px-5 py-3 sm:py-4">
       <p className="text-neutral-500 text-xs uppercase tracking-wider">{label}</p>
       <p className="text-white font-bold mt-2">{value}</p>
     </div>
   );
 }
-

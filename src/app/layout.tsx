@@ -25,8 +25,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${geistSans.className} ${geistMono.variable} antialiased bg-neutral-950 text-white`}>
+    <html lang="en" className="h-full bg-neutral-950">
+      <body className={`${geistSans.className} ${geistMono.variable} antialiased bg-neutral-950 text-white min-h-screen`}>
         <AudioProvider>
           <AuthGate>{children}</AuthGate>
         </AudioProvider>

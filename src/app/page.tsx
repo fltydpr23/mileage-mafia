@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { setAuthed } from "@/lib/auth";
 import { useAudio } from "@/components/AudioProvider";
@@ -12,6 +12,11 @@ export default function LoginPage() {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
   const [granted, setGranted] = useState(false);
+
+  const houseRule = useMemo(
+    () => "The mafia awaits.",
+    []
+  );
 
   function goIn() {
     router.push("/leaderboard");
@@ -33,10 +38,8 @@ export default function LoginPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
-
     if (granted) return;
 
-    // Check password via API
     const res = await fetch("/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -50,50 +53,42 @@ export default function LoginPage() {
       return;
     }
 
-    // 🔑 THIS is the magic line (must happen on the same click)
-  await audio.play();
+    // must happen on same user gesture
+    await audio.play();
 
-  setAuthed();
-  setGranted(true); // ACCESS GRANTED overlay
-    // Start global music on submit gesture (so it persists across routes)
-    
+    setAuthed();
+    setGranted(true);
   }
 
   return (
     <main className="min-h-screen bg-neutral-950 text-white relative overflow-hidden">
-      {/* Cinematic drift + fog + jitter + scanlines + grain */}
-      <div className="pointer-events-none absolute inset-0">
-        {/* moving gradient */}
-        <div className="absolute inset-0 mm-drift">
-          <div className="absolute inset-0 bg-[radial-gradient(900px_circle_at_15%_15%,rgba(255,255,255,0.08),transparent_55%),radial-gradient(900px_circle_at_85%_10%,rgba(244,63,94,0.14),transparent_55%),radial-gradient(900px_circle_at_55%_115%,rgba(245,158,11,0.12),transparent_55%)]" />
-        </div>
+      {/* ===== Noir CRT Background (subtle movement, not bright) ===== */}
+      <div className="pointer-events-none absolute inset-0 noir-crt noir-breath">
+        {/* deep base */}
+        <div className="absolute inset-0 bg-[#050505]" />
 
-        {/* fog layer */}
-        <div
-          className="absolute inset-0 opacity-[0.18] mm-drift"
-          style={{ animationDuration: "28s", mixBlendMode: "screen" as any }}
-        >
-          <div className="absolute inset-0 bg-[radial-gradient(700px_circle_at_30%_30%,rgba(255,255,255,0.08),transparent_60%),radial-gradient(800px_circle_at_80%_70%,rgba(255,255,255,0.06),transparent_62%)]" />
-        </div>
+        {/* subtle blooms (from global.css .noir-blooms) */}
+        <div className="absolute inset-0 noir-blooms opacity-[0.95]" />
 
-        {/* jitter */}
-        <div className="absolute inset-0 mm-jitter" />
+        {/* grain + scanlines */}
+        <div className="absolute inset-0 noir-noise opacity-[0.16] mix-blend-overlay" />
+        <div className="absolute inset-0 noir-scanlines opacity-[0.08] mix-blend-overlay" />
+
+        {/* very subtle shimmer band */}
+        <div className="absolute inset-0 noir-shimmer opacity-[0.16]" />
+
+        {/* micro jitter (tiny) */}
+        <div className="absolute inset-0 mm-jitter opacity-[0.18]" />
 
         {/* vignette */}
-        <div className="absolute inset-0 [background:radial-gradient(60%_60%_at_50%_35%,transparent_40%,rgba(0,0,0,0.92)_100%)]" />
-
-        {/* subtle scanlines */}
-        <div className="absolute inset-0 opacity-[0.10] mix-blend-overlay [background:repeating-linear-gradient(to_bottom,rgba(255,255,255,0.05),rgba(255,255,255,0.05)_1px,transparent_1px,transparent_4px)]" />
-
-        {/* grain */}
-        <div className="absolute inset-0 opacity-[0.10] mix-blend-overlay [background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22160%22 height=%22160%22%3E%3Cfilter id=%22n%22 x=%220%22 y=%220%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%224%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22160%22 height=%22160%22 filter=%22url(%23n)%22 opacity=%220.35%22/%3E%3C/svg%3E')]" />
+        <div className="absolute inset-0 bg-[radial-gradient(1200px_circle_at_50%_35%,transparent_38%,rgba(0,0,0,0.95)_82%)]" />
       </div>
 
       {/* ACCESS GRANTED overlay (persistent until Continue) */}
       {granted ? (
         <div className="absolute inset-0 z-50 flex items-center justify-center">
-          {/* flash frame */}
-          <div className="absolute inset-0 bg-white/40 mm-flash" />
+          {/* flash frame (dim) */}
+          <div className="absolute inset-0 bg-white/20 mm-flash" />
 
           {/* click-anywhere backdrop */}
           <button
@@ -104,7 +99,7 @@ export default function LoginPage() {
           />
 
           <div className="relative mm-shake">
-            <div className="bg-black/60 backdrop-blur-xl ring-1 ring-white/10 rounded-3xl px-10 py-8 text-center mm-grant w-[min(520px,90vw)]">
+            <div className="bg-black/65 backdrop-blur-xl ring-1 ring-white/10 rounded-3xl px-10 py-8 text-center mm-grant w-[min(520px,90vw)]">
               <div className="text-xs uppercase tracking-[0.35em] text-neutral-400 mb-3">
                 Mileage Mafia
               </div>
@@ -125,7 +120,9 @@ export default function LoginPage() {
                 >
                   Continue →
                 </button>
-                <span className="text-neutral-500 text-xs">(Click anywhere / press Enter)</span>
+                <span className="text-neutral-500 text-xs">
+                  (Click anywhere / press Enter)
+                </span>
               </div>
             </div>
           </div>
@@ -135,33 +132,36 @@ export default function LoginPage() {
       {/* Content */}
       <div className="relative max-w-xl mx-auto px-6 py-20">
         {/* Top strip */}
-        <div className="flex items-center justify-between">
-          <div className="inline-flex items-center gap-3">
-            <div className="h-12 w-12 rounded-2xl bg-white/10 ring-1 ring-white/10 flex items-center justify-center font-black mm-flicker opacity-90">
+        <div className="flex items-center justify-between gap-4">
+          <div className="inline-flex items-center gap-3 min-w-0">
+            <div className="h-12 w-12 rounded-2xl bg-white/10 ring-1 ring-white/10 flex items-center justify-center font-black mm-flicker opacity-90 shrink-0">
               MM
             </div>
-            <div className="leading-tight">
-              <p className="text-sm text-neutral-400">The Family</p>
-              <h1 className="text-2xl font-black tracking-tight">Mileage Mafia</h1>
+            <div className="leading-tight min-w-0">
+              <p className="text-sm text-neutral-400">Season 2</p>
+              <h1 className="text-2xl font-black tracking-tight truncate">
+                Mileage Mafia
+              </h1>
             </div>
           </div>
 
           <button
-  type="button"
-  onClick={() => audio.play()}
-  disabled={granted}
-  className="px-4 py-2 rounded-full bg-neutral-900/60 ring-1 ring-neutral-800 text-neutral-300 text-sm hover:bg-white/5 transition"
->
-  {audio.playing ? "Playing" : "Play Music"}
-</button>
+            type="button"
+            onClick={() => audio.play()}
+            disabled={granted}
+            className="shrink-0 px-4 py-2 rounded-full bg-neutral-900/60 ring-1 ring-neutral-800 text-neutral-300 text-sm hover:bg-white/5 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {audio.playing ? "Playing" : "Play Music"}
+          </button>
         </div>
 
         {/* Card */}
-        <div className="mt-14 bg-neutral-900/60 ring-1 ring-neutral-800 rounded-3xl p-8">
-          <p className="text-xs uppercase tracking-wider text-neutral-500">Enter the code</p>
-          <p className="mt-2 text-neutral-300">
-            The sheet is the truth. No GPS excuses in court.
+        <div className="mt-14 bg-neutral-900/55 ring-1 ring-neutral-800 rounded-3xl p-8 backdrop-blur-xl">
+          <p className="text-xs uppercase tracking-wider text-neutral-500">
+            Enter the code
           </p>
+
+          <p className="mt-2 text-neutral-300">{houseRule}</p>
 
           <form onSubmit={onSubmit} className="mt-8 space-y-4">
             <input
@@ -177,7 +177,7 @@ export default function LoginPage() {
               <p className="text-rose-300 text-sm">{err}</p>
             ) : (
               <p className="text-neutral-500 text-sm">
-                Don’t leak the code. The family remembers 😈
+                
               </p>
             )}
 
