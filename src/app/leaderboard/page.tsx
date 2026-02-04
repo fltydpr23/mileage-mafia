@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSheet } from "@/lib/sheets";
 import NowPlaying from "@/components/NowPlaying";
+import PotChip from "@/components/PotChip";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,6 @@ const MAFIA_LEVELS = [
     tint: "bg-amber-500/10 ring-amber-300/25",
     bar: "bg-amber-300",
     desc: "1500+ km",
-  
   },
   {
     minKm: 1000,
@@ -40,7 +40,6 @@ const MAFIA_LEVELS = [
     tint: "bg-rose-500/10 ring-rose-300/25",
     bar: "bg-rose-300",
     desc: "1000–1499 km",
-    
   },
   {
     minKm: 500,
@@ -49,7 +48,6 @@ const MAFIA_LEVELS = [
     tint: "bg-emerald-500/10 ring-emerald-300/25",
     bar: "bg-emerald-300",
     desc: "500–999 km",
-    
   },
   {
     minKm: 250,
@@ -58,7 +56,6 @@ const MAFIA_LEVELS = [
     tint: "bg-sky-500/10 ring-sky-300/25",
     bar: "bg-sky-300",
     desc: "250–499 km",
-    
   },
   {
     minKm: 0,
@@ -67,7 +64,6 @@ const MAFIA_LEVELS = [
     tint: "bg-zinc-500/10 ring-zinc-300/20",
     bar: "bg-zinc-300",
     desc: "0–249 km",
-    
   },
 ] as const;
 
@@ -98,7 +94,18 @@ export default async function LeaderboardPage() {
   });
 
   const totalRunners = rows.length;
-  const pot = totalRunners * 1000;
+
+  // const leaderBonus = rankShown === 1; // safest if rank is present
+
+  
+
+  // Pot logic
+  const oathPot = totalRunners * 1000;
+
+  // TODO: wire to Sheets later
+  const penaltyFund = 0;
+
+  const totalPot = oathPot + penaltyFund;
 
   const totalKm = rows.reduce((s, r) => s + r.yearlyKm, 0);
   const avgCompletion = totalRunners
@@ -108,9 +115,7 @@ export default async function LeaderboardPage() {
   const leader = [...rows].sort((a, b) => b.completion - a.completion)[0];
   const leaderLvl = leader ? getMafiaLevel(leader.yearlyKm) : null;
 
-  // Height of sticky app header (nav)
   const APP_HEADER_H = 72; // px
-  // Height of sticky list header (# Runner KM %)
   const LIST_HEADER_H = 56; // px
 
   return (
@@ -118,7 +123,7 @@ export default async function LeaderboardPage() {
       {/* App background glow */}
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(900px_circle_at_20%_-10%,rgba(255,255,255,0.08),transparent_60%),radial-gradient(900px_circle_at_90%_0%,rgba(16,185,129,0.10),transparent_55%),radial-gradient(900px_circle_at_60%_110%,rgba(244,63,94,0.10),transparent_55%)]" />
 
-      {/* Top Nav (sticky) */}
+      {/* Top Nav */}
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-neutral-950/70 border-b border-neutral-900">
         <div
           className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3"
@@ -138,12 +143,11 @@ export default async function LeaderboardPage() {
 
           <div className="flex items-center gap-2">
             <Chip label="Runners" value={String(totalRunners)} />
-            <Chip label="Pot" value={`₹${pot.toLocaleString("en-IN")}`} />
+            <PotChip total={totalPot} oathPot={oathPot} penaltyFund={penaltyFund} />
           </div>
         </div>
       </header>
 
-      {/* ✅ Body (DEADSPACE FIXED): less vertical padding + less section spacing */}
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Hero row */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -191,7 +195,6 @@ export default async function LeaderboardPage() {
               ) : null}
             </div>
 
-            {/* ✅ slightly tighter than before */}
             <div className="mt-5 sm:mt-6 space-y-3">
               <div className="flex items-end justify-between">
                 <div>
@@ -220,7 +223,6 @@ export default async function LeaderboardPage() {
                 />
               </div>
 
-              {/* ✅ DEADSPACE FIX: smaller top padding + smaller gaps */}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 pt-2">
                 <MiniKpi
                   label="Total KM logged"
@@ -228,14 +230,14 @@ export default async function LeaderboardPage() {
                 />
                 <MiniKpi
                   label="Prize pool"
-                  value={`₹${pot.toLocaleString("en-IN")}`}
+                  value={`₹${totalPot.toLocaleString("en-IN")}`}
                 />
                 <MiniKpi label="House rule" value="Respect the oath." />
               </div>
             </div>
           </div>
 
-          {/* Side hero: hierarchy */}
+          {/* Side hero */}
           <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10">
             <p className="text-neutral-400 text-xs uppercase tracking-wider">
               Hierarchy
@@ -264,12 +266,7 @@ export default async function LeaderboardPage() {
                         >
                           {lvl.name}
                         </span>
-                        <span className="text-neutral-500 text-xs">
-                          {lvl.desc}
-                        </span>
-                      </div>
-                      <div className="text-neutral-500 text-xs mt-2 leading-relaxed">
-                        
+                        <span className="text-neutral-500 text-xs">{lvl.desc}</span>
                       </div>
                     </div>
 
@@ -287,13 +284,11 @@ export default async function LeaderboardPage() {
           </div>
         </section>
 
-        {/* ✅ DEADSPACE FIX: tighter header block */}
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="text-neutral-400 text-xs uppercase tracking-wider">
               Leaderboard
             </p>
-            {/* was mt-2, make it mt-1 */}
             <h3 className="text-xl sm:text-2xl font-bold mt-1">Runners</h3>
           </div>
           <p className="text-neutral-500 text-sm text-right">
@@ -306,7 +301,6 @@ export default async function LeaderboardPage() {
 
         {/* List */}
         <section className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 overflow-hidden">
-          {/* Desktop sticky list header */}
           <div
             className="hidden sm:block sticky z-30 bg-neutral-950/90 backdrop-blur-xl border-b border-neutral-800"
             style={{ top: APP_HEADER_H, height: LIST_HEADER_H }}
@@ -320,7 +314,6 @@ export default async function LeaderboardPage() {
             </div>
           </div>
 
-          {/* ✅ Sai fix kept exactly as you have it */}
           <div className="divide-y divide-neutral-800 sm:pt-[56px]">
             {sorted.map((r, idx) => {
               const lvl = getMafiaLevel(r.yearlyKm);
@@ -380,9 +373,7 @@ export default async function LeaderboardPage() {
                         </div>
                       </div>
 
-                      <div className="text-neutral-500 text-2xl leading-none">
-                        ›
-                      </div>
+                      <div className="text-neutral-500 text-2xl leading-none">›</div>
                     </div>
                   </div>
 
@@ -403,9 +394,7 @@ export default async function LeaderboardPage() {
 
                           <div className="min-w-0 w-full">
                             <div className="flex items-center justify-between gap-3">
-                              <p className="font-bold text-lg truncate">
-                                {r.name}
-                              </p>
+                              <p className="font-bold text-lg truncate">{r.name}</p>
                               <span
                                 className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold ${lvl.pill}`}
                               >
@@ -467,9 +456,7 @@ function Chip({ label, value }: { label: string; value: string }) {
   return (
     <div className="px-3 sm:px-4 py-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 text-neutral-300 text-xs sm:text-sm">
       <span className="text-neutral-500">{label}</span>
-      <span className="text-white font-semibold ml-2 tabular-nums">
-        {value}
-      </span>
+      <span className="text-white font-semibold ml-2 tabular-nums">{value}</span>
     </div>
   );
 }

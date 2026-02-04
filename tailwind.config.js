@@ -11,5 +11,23 @@ module.exports = {
     },
   },
 },
+theme: {
+  extend: {
+    colors: {
+      noir: {
+        black: "#050505",
+        charcoal: "#0e0e0e",
+        smoke: "#1a1a1a",
+        ash: "#2a2a2a",
+      },
+      blood: {
+        DEFAULT: "#8b1d1d",
+        dark: "#6f1616",
+        soft: "rgba(139,29,29,0.15)",
+      },
+    },
+  },
+},
+
   plugins: [],
 };
