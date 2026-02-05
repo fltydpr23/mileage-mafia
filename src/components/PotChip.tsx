@@ -129,9 +129,9 @@ export default function PotChip({
 
             <div className="pt-2 border-t border-neutral-800">
               <div className="text-xs text-neutral-500 leading-relaxed">
-                Penalty fund is used for{" "}
+                Penalty funds will be allocated towards{" "}
                 <span className="text-neutral-200">challenges</span> +{" "}
-                <span className="text-neutral-200">fun giveaways</span>.
+                <span className="text-neutral-200">performance incentives</span>.
               </div>
             </div>
 

@@ -101,6 +101,101 @@ html, body { height: 100%;
 .mm-shake { animation: mm-shake 500ms ease-in-out both; }
 .mm-flash { animation: mm-flash 420ms ease-out both; }
 
+/* === Oath: ink dot + notary + stamp === */
+
+.mm-inkbox {
+  position: relative;
+}
+
+.mm-inkdot {
+  filter: blur(0.1px);
+}
+
+/* Subtle ink bleed when checked */
+.peer:checked ~ .mm-inkbox .mm-inkdot,
+.peer:checked + .mm-inkbox .mm-inkdot {
+  animation: mmInkBleed 420ms ease-out both;
+}
+
+@keyframes mmInkBleed {
+  0%   { transform: scale(0.2); opacity: 0; }
+  55%  { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.95; }
+}
+
+/* Notary pulse ring */
+.mm-notary {
+  box-shadow:
+    0 0 0 0 rgba(239, 68, 68, 0.0),
+    0 0 0 0 rgba(239, 68, 68, 0.0);
+  animation: none;
+}
+
+.peer:checked ~ .mm-notary,
+.peer:checked + .mm-notary {
+  animation: mmNotary 520ms ease-out both;
+}
+
+@keyframes mmNotary {
+  0% {
+    transform: scale(0.85);
+    box-shadow:
+      0 0 0 0 rgba(239, 68, 68, 0.35),
+      0 0 0 0 rgba(239, 68, 68, 0.18);
+    opacity: 0.95;
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow:
+      0 0 0 10px rgba(239, 68, 68, 0.0),
+      0 0 0 18px rgba(239, 68, 68, 0.0);
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(1.05);
+    opacity: 0;
+  }
+}
+
+/* Strike-through feels like a pen line, not CSS default */
+.mm-strike {
+  position: relative;
+  display: inline;
+}
+
+.mm-strike::after {
+  content: "";
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  top: 55%;
+  height: 1px;
+  background: rgba(239, 68, 68, 0.45);
+  transform: rotate(-1deg);
+  opacity: 0.9;
+}
+
+/* Stamp: subtle, not meme-y */
+.mm-stamp {
+  font-size: 10px;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: rgba(239, 68, 68, 0.62);
+  border: 1px solid rgba(239, 68, 68, 0.30);
+  padding: 6px 10px;
+  border-radius: 999px;
+  transform: rotate(-6deg) scale(0.92);
+  background: rgba(0,0,0,0.25);
+  backdrop-filter: blur(6px);
+  animation: mmStamp 520ms cubic-bezier(.2,.9,.2,1.1) both;
+}
+
+@keyframes mmStamp {
+  0%   { transform: rotate(-8deg) scale(0.6); opacity: 0; filter: blur(1px); }
+  60%  { transform: rotate(-6deg) scale(1.02); opacity: 0.95; filter: blur(0px); }
+  100% { transform: rotate(-6deg) scale(0.92); opacity: 0.75; }
+}
+
 /* ================================
    Noir TV Static + Scanlines + Subtle Blooms
    (for password / auth screens)

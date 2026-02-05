@@ -3,6 +3,7 @@ import { getSheet } from "@/lib/sheets";
 import NowPlaying from "@/components/NowPlaying";
 import PotChip from "@/components/PotChip";
 
+
 export const dynamic = "force-dynamic";
 
 function toNum(v: any) {
@@ -24,50 +25,64 @@ function initials(name: string) {
   return (a + b).toUpperCase();
 }
 
-const MAFIA_LEVELS = [
+/**
+ * Level theme tokens:
+ * - pill: the label badge
+ * - tint: used for avatar chips / light level wash (must work with `ring-1 ${tint}`)
+ * - bar: progress bar fill
+ *
+ * NOTE: These same tokens should be reused on runner pages for cards + progress bars.
+ */
+export const MAFIA_LEVELS = [
   {
     minKm: 1500,
     name: "Godfather",
-    pill: "bg-amber-300 text-black",
-    tint: "bg-amber-500/10 ring-amber-300/25",
-    bar: "bg-amber-300",
+    // Blood Red
+    pill: "bg-red-900 text-red-50 ring-1 ring-red-700/40",
+    tint: "bg-red-900/15 ring-red-700/35",
+    bar: "bg-red-800",
     desc: "1500+ km",
   },
   {
     minKm: 1000,
     name: "Underboss",
-    pill: "bg-rose-300 text-black",
-    tint: "bg-rose-500/10 ring-rose-300/25",
-    bar: "bg-rose-300",
+    // Burgundy (wine)
+    pill: "bg-rose-950 text-rose-50 ring-1 ring-rose-700/35",
+    tint: "bg-rose-950/15 ring-rose-700/30",
+    bar: "bg-rose-800",
     desc: "1000–1499 km",
   },
   {
     minKm: 500,
     name: "Area Don",
-    pill: "bg-emerald-300 text-black",
-    tint: "bg-emerald-500/10 ring-emerald-300/25",
-    bar: "bg-emerald-300",
+    // Rust / Brass (warm metal)
+    pill: "bg-amber-900 text-amber-50 ring-1 ring-amber-700/35",
+    tint: "bg-amber-900/15 ring-amber-700/30",
+    bar: "bg-amber-700",
     desc: "500–999 km",
   },
   {
     minKm: 250,
     name: "Soldier",
-    pill: "bg-sky-300 text-black",
-    tint: "bg-sky-500/10 ring-sky-300/25",
-    bar: "bg-sky-300",
+    // Gunmetal (cold steel)
+    pill: "bg-slate-700 text-slate-50 ring-1 ring-slate-400/25",
+    tint: "bg-slate-800/20 ring-slate-400/20",
+    bar: "bg-slate-500",
     desc: "250–499 km",
   },
   {
     minKm: 0,
     name: "Associate",
-    pill: "bg-zinc-300 text-black",
-    tint: "bg-zinc-500/10 ring-zinc-300/20",
-    bar: "bg-zinc-300",
+    // ✅ Deep Noir Green (NOT bright emerald)
+    // Goal: feels like "night-vision green" but muted + classy.
+    pill: "bg-emerald-950 text-emerald-50 ring-1 ring-emerald-700/30",
+    tint: "bg-emerald-950/18 ring-emerald-700/25",
+    bar: "bg-emerald-700",
     desc: "0–249 km",
   },
 ] as const;
 
-function getMafiaLevel(km: number) {
+export function getMafiaLevel(km: number) {
   return (
     MAFIA_LEVELS.find((l) => km >= l.minKm) ??
     MAFIA_LEVELS[MAFIA_LEVELS.length - 1]
@@ -95,16 +110,10 @@ export default async function LeaderboardPage() {
 
   const totalRunners = rows.length;
 
-  // const leaderBonus = rankShown === 1; // safest if rank is present
-
-  
-
   // Pot logic
   const oathPot = totalRunners * 1000;
-
   // TODO: wire to Sheets later
   const penaltyFund = 0;
-
   const totalPot = oathPot + penaltyFund;
 
   const totalKm = rows.reduce((s, r) => s + r.yearlyKm, 0);
@@ -137,7 +146,7 @@ export default async function LeaderboardPage() {
               <p className="font-black tracking-tight text-base sm:text-lg truncate">
                 Mileage Mafia
               </p>
-              <p className="text-neutral-400 text-xs">Leaderboard</p>
+              <p className="text-neutral-400 text-xs">Season 2</p>
             </div>
           </div>
 
@@ -232,7 +241,7 @@ export default async function LeaderboardPage() {
                   label="Prize pool"
                   value={`₹${totalPot.toLocaleString("en-IN")}`}
                 />
-                <MiniKpi label="House rule" value="Respect the oath." />
+                <MiniKpi label="House rule" value="Respect the Code." />
               </div>
             </div>
           </div>
@@ -376,6 +385,7 @@ export default async function LeaderboardPage() {
                       <div className="text-neutral-500 text-2xl leading-none">›</div>
                     </div>
                   </div>
+                  
 
                   {/* DESKTOP */}
                   <div className="hidden sm:block px-6 md:px-8 py-6 hover:bg-white/5 transition">

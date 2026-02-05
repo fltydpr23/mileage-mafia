@@ -123,7 +123,7 @@ const MAFIA_LEVELS = [
   },
   {
     minKm: 500,
-    name: "Capo",
+    name: "Area Don",
     badge: "bg-emerald-300 text-black shadow-lg shadow-emerald-300/20",
     cardBg: "bg-emerald-500/10",
     cardRing: "ring-emerald-300/30",
@@ -133,7 +133,7 @@ const MAFIA_LEVELS = [
   },
   {
     minKm: 250,
-    name: "Made Man",
+    name: "Soldier",
     badge: "bg-sky-300 text-black shadow-lg shadow-sky-300/20",
     cardBg: "bg-sky-500/10",
     cardRing: "ring-sky-300/30",
