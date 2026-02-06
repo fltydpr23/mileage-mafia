@@ -1,3 +1,4 @@
+// REPLACED FILE CONTENTS
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -11,9 +12,13 @@ type Rule = { id: string; text: string };
 const ACCENT = {
   ring: "ring-red-500/25",
   ringStrong: "ring-red-500/35",
-  text: "text-red-300",
+  text: "text-red-200",
   bgSoft: "bg-red-500/10",
 };
+
+function clsx(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -21,37 +26,25 @@ export default function LoginPage() {
 
   const [step, setStep] = useState<Step>("LOCK");
 
-  // LOCK
+  // LOCK (Door Phone)
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
-  const [doorOpen, setDoorOpen] = useState(false);
-  const [doorPulse, setDoorPulse] = useState(false);
+  const [dialTone, setDialTone] = useState<"IDLE" | "CALLING" | "DENIED" | "UNLATCHED">("IDLE");
   const pwRef = useRef<HTMLInputElement | null>(null);
 
   // REVIEW
   const [reviewCleared, setReviewCleared] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
 
-  // brightness grows with pw length (0..1) — max glow around ~8 chars
-  const pwProgress = Math.min(pw.length / 8, 1);
+  const REVIEW_CLEAR_MS = 2400;
+  const REVIEW_TOTAL_MS = 3900;
 
-  // Tune review duration here
-  const REVIEW_CLEAR_MS = 2600; // when status flips to CLEARED
-  const REVIEW_TOTAL_MS = 4200; // when INDUCTED appears
-
-  // OATH / ARTICLES
   const RULES: Rule[] = useMemo(
     () => [
       { id: "target", text: "I have pledged an annual mileage target. Once sworn, this target is final." },
       { id: "entryfee", text: "I have contributed ₹1000 to the family pot. Payment is mandatory." },
-      {
-        id: "clause85",
-        text: "If I fail to reach 85% of my annual target by December 31st, an additional penalty of ₹1000 will be charged.",
-      },
-      {
-        id: "first",
-        text: "The first member to reach 100% of their annual target will receive a ₹1000 leader bonus, funded equally by the remaining members.",
-      },
+      { id: "clause85", text: "If I fail to reach 85% of my annual target by December 31st, an additional penalty of ₹1000 will be charged." },
+      { id: "first", text: "The first member to reach 100% of their annual target will receive a ₹1000 leader bonus, funded equally by the remaining members." },
       { id: "noexcuses", text: "Conditions, injuries, devices, or circumstances do not alter the terms. Only completed distance is recognized." },
       { id: "respect", text: "Disorder, manipulation, or disrespect will be met with penalties at the discretion of the family." },
       { id: "strava", text: "If the activity is not logged on Strava, it doesn't count." },
@@ -80,54 +73,120 @@ export default function LoginPage() {
     setChecks((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  // ---- Audio helpers (NO FADE) ----
+  // -------------------------
+  // AUDIO FIX (no spam)
+  // -------------------------
+  const ambienceAttemptedRef = useRef(false);
+  const ambienceGestureDoneRef = useRef(false);
+  const grantedAudioDoneRef = useRef(false);
+
   const stopAudio = useCallback(() => {
-    const a: any = audio as any;
     try {
-      // handle both "HTMLAudioElement-style" and custom providers
-      a.stop?.();
-      a.pause?.();
-      // do NOT force volume changes (avoid glitches)
+      audio.stop?.();
+      audio.pause?.();
+    } catch {}
+  }, [audio]);
+
+  const tryStartAmbienceOnce = useCallback(async () => {
+    if (ambienceAttemptedRef.current) return;
+    ambienceAttemptedRef.current = true;
+
+    try {
+      await audio.playAmbience();
+      setAudioBlocked(false);
     } catch {
-      // ignore
+      // blocked is expected; we’ll start on first gesture
+      setAudioBlocked(true);
     }
   }, [audio]);
 
-  const tryPlayAudio = useCallback(async () => {
-    setAudioBlocked(false);
+  const startAmbienceOnFirstGesture = useCallback(async () => {
+    if (ambienceGestureDoneRef.current) return;
+    ambienceGestureDoneRef.current = true;
+
     try {
-      await audio.play(); // NORMAL, immediate play — no fade
+      await audio.unlock();
+    } catch {}
+
+    try {
+      await audio.playAmbience();
+      setAudioBlocked(false);
     } catch {
       setAudioBlocked(true);
     }
   }, [audio]);
+
+  const playNoirAtStampOnce = useCallback(async () => {
+    if (grantedAudioDoneRef.current) return;
+    grantedAudioDoneRef.current = true;
+
+    try {
+      await audio.unlock();
+    } catch {}
+
+    try {
+      audio.sfx("stamp", { volume: 0.95, randomRate: [0.98, 1.02] });
+    } catch {}
+
+    // Noir immediately after stamp begins
+    window.setTimeout(async () => {
+      try {
+        await audio.playMusic(0);
+        setAudioBlocked(false);
+      } catch {
+        setAudioBlocked(true);
+      }
+    }, 30);
+  }, [audio]);
+
+  // LOCK: attempt ambience autoplay once
+  useEffect(() => {
+    if (step !== "LOCK") return;
+    void tryStartAmbienceOnce();
+  }, [step, tryStartAmbienceOnce]);
 
   const resetBackToLock = useCallback(() => {
     stopAudio();
     setAudioBlocked(false);
     setReviewCleared(false);
 
+    // reset audio gating
+    ambienceAttemptedRef.current = false;
+    ambienceGestureDoneRef.current = false;
+    grantedAudioDoneRef.current = false;
+
     setStep("LOCK");
     setPw("");
     setErr("");
     setChecks(initialChecks);
     setSig("");
-    setDoorOpen(false);
-    setDoorPulse(false);
+    setDialTone("IDLE");
 
     requestAnimationFrame(() => {
       pwRef.current?.focus();
-      // mobile hint
       pwRef.current?.click?.();
     });
-  }, [initialChecks, stopAudio]);
+
+    // attempt again when back to lock
+    window.setTimeout(() => {
+      void tryStartAmbienceOnce();
+    }, 0);
+  }, [initialChecks, stopAudio, tryStartAmbienceOnce]);
 
   const onSubmitPassword = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
       setErr("");
-
       if (step !== "LOCK") return;
+
+      if (!pw.trim()) {
+        setErr("STATE YOUR CODE");
+        setDialTone("DENIED");
+        window.setTimeout(() => setDialTone("IDLE"), 650);
+        return;
+      }
+
+      setDialTone("CALLING");
 
       const res = await fetch("/api/auth", {
         method: "POST",
@@ -137,9 +196,9 @@ export default function LoginPage() {
 
       const data = await res.json().catch(() => ({ ok: false }));
       if (!data.ok) {
-        setErr("WRONG CODE");
-        setDoorPulse(true);
-        window.setTimeout(() => setDoorPulse(false), 220);
+        setErr("LINE WENT DEAD");
+        setDialTone("DENIED");
+        window.setTimeout(() => setDialTone("IDLE"), 700);
         setPw("");
         requestAnimationFrame(() => {
           pwRef.current?.focus();
@@ -148,7 +207,7 @@ export default function LoginPage() {
         return;
       }
 
-      setDoorOpen(true);
+      setDialTone("UNLATCHED");
       window.setTimeout(() => setStep("OATH"), 520);
     },
     [pw, step]
@@ -161,13 +220,11 @@ export default function LoginPage() {
     setErr("");
     setAuthed();
 
-    // REVIEW phase (silent)
     setAudioBlocked(false);
     setReviewCleared(false);
     setStep("REVIEW");
   }, [canSwear, step]);
 
-  // REVIEW timers (flip → CLEARED, then → GRANTED)
   useEffect(() => {
     if (step !== "REVIEW") return;
 
@@ -178,14 +235,13 @@ export default function LoginPage() {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-  }, [step, REVIEW_CLEAR_MS, REVIEW_TOTAL_MS]);
+  }, [step]);
 
-  // Start music ONLY when INDUCTED is on-screen (no fade)
+  // GRANTED: stamp + noir (once)
   useEffect(() => {
-    if (step === "GRANTED") {
-      tryPlayAudio();
-    }
-  }, [step, tryPlayAudio]);
+    if (step !== "GRANTED") return;
+    void playNoirAtStampOnce();
+  }, [step, playNoirAtStampOnce]);
 
   // Hotkeys
   useEffect(() => {
@@ -219,207 +275,177 @@ export default function LoginPage() {
     if (step === "LOCK") {
       requestAnimationFrame(() => {
         pwRef.current?.focus();
-        // This helps iOS sometimes, as long as it's within a user interaction later
-        // But focus alone is still useful for showing the caret/cursor.
       });
     }
   }, [step]);
 
-  /**
-   * =========================
-   * LOCK (DOOR) + MOBILE CURSOR INPUT
-   * =========================
-   */
   if (step === "LOCK") {
-    const glow = pwProgress;
-    const seamOpacity = 0.35 + glow * 0.55;
-    const leakOpacity = 0.10 + glow * 0.85;
-    const panelLift = glow * 0.05;
-
-    // visual caret: show even when empty
-    const caretOn = true;
+    const glow =
+      dialTone === "UNLATCHED" ? 1 : dialTone === "CALLING" ? 0.6 : dialTone === "DENIED" ? 0.35 : 0.22;
 
     return (
       <main
         className="fixed inset-0 bg-black text-white overflow-hidden"
         onMouseDown={() => {
           pwRef.current?.focus();
-          pwRef.current?.click?.();
+          void startAmbienceOnFirstGesture();
         }}
         onTouchStart={() => {
           pwRef.current?.focus();
-          pwRef.current?.click?.();
+          void startAmbienceOnFirstGesture();
         }}
       >
+        {/* noir bg */}
         <div className="absolute inset-0">
           <div className="absolute inset-0 bg-black" />
-
           <div
-            className="absolute inset-0 transition-opacity duration-150"
-            style={{
-              opacity: doorOpen ? 1 : leakOpacity,
-              background:
-                "radial-gradient(700px circle at 50% 52%, rgba(239,68,68,0.26), transparent 62%)," +
-                "radial-gradient(980px circle at 50% 55%, rgba(255,255,255,0.07), transparent 72%)",
-            }}
-          />
-
-          <div
-            className={[
-              "absolute left-1/2 top-0 h-full w-[2px] transition-opacity duration-150",
-              doorPulse ? "animate-[mmSeamShake_140ms_linear_1]" : "",
-            ].join(" ")}
-            style={{
-              opacity: doorOpen ? 0 : seamOpacity,
-              transform: "translateX(-1px)",
-              background:
-                "linear-gradient(to bottom, transparent, rgba(239,68,68,0.92), rgba(255,255,255,0.55), rgba(239,68,68,0.72), transparent)",
-              filter: `blur(${0.4 + glow * 1.0}px)`,
-            }}
-          />
-
-          <div
-            className={[
-              "absolute inset-y-0 left-0 w-1/2 transition-transform duration-500 ease-out",
-              doorOpen ? "-translate-x-[105%]" : "translate-x-0",
-            ].join(" ")}
+            className="absolute inset-0"
             style={{
               background:
-                "linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.00) 55%)," +
-                "radial-gradient(900px circle at 100% 50%, rgba(239,68,68,0.12), transparent 55%)," +
-                "repeating-linear-gradient(0deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, rgba(0,0,0,0) 6px, rgba(0,0,0,0) 12px)",
-              boxShadow: "inset -1px 0 rgba(255,255,255,0.16), inset 0 0 90px rgba(0,0,0,0.88)",
-              opacity: 0.94,
-              transformOrigin: "right center",
-              transform: doorOpen ? "translateX(-105%)" : `translateX(0) scale(${1 + panelLift})`,
+                "radial-gradient(900px circle at 50% 22%, rgba(239,68,68,0.10), transparent 55%)," +
+                "radial-gradient(1000px circle at 50% 80%, rgba(255,255,255,0.06), transparent 60%)",
+              opacity: 0.95,
             }}
           />
-
-          <div
-            className={[
-              "absolute inset-y-0 right-0 w-1/2 transition-transform duration-500 ease-out",
-              doorOpen ? "translate-x-[105%]" : "translate-x-0",
-            ].join(" ")}
-            style={{
-              background:
-                "linear-gradient(270deg, rgba(255,255,255,0.04), rgba(255,255,255,0.00) 55%)," +
-                "radial-gradient(900px circle at 0% 50%, rgba(239,68,68,0.12), transparent 55%)," +
-                "repeating-linear-gradient(0deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, rgba(0,0,0,0) 6px, rgba(0,0,0,0) 12px)",
-              boxShadow: "inset 1px 0 rgba(255,255,255,0.16), inset 0 0 90px rgba(0,0,0,0.88)",
-              opacity: 0.94,
-              transformOrigin: "left center",
-              transform: doorOpen ? "translateX(105%)" : `translateX(0) scale(${1 + panelLift})`,
-            }}
-          />
-
-          {!doorOpen ? (
-            <>
-              <div className="absolute top-1/2 left-[calc(50%-80px)] h-10 w-[2px] rounded-full bg-white/10" style={{ transform: "translateY(-50%)" }} />
-              <div className="absolute top-1/2 right-[calc(50%-80px)] h-10 w-[2px] rounded-full bg-white/10" style={{ transform: "translateY(-50%)" }} />
-            </>
-          ) : null}
-
-          {doorPulse ? <div className="absolute inset-0 bg-red-500/12 animate-pulse" /> : null}
-
-          <div className="pointer-events-none absolute inset-0 noir-noise opacity-[0.10] mix-blend-overlay" />
-          <div className="pointer-events-none absolute inset-0 noir-scanlines opacity-[0.06] mix-blend-overlay" />
-
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_circle_at_50%_50%,rgba(0,0,0,0.25),rgba(0,0,0,0.92)_70%,rgba(0,0,0,0.98)_100%)]" />
+          <div className="pointer-events-none absolute inset-0 noir-noise opacity-[0.12] mix-blend-overlay" />
+          <div className="pointer-events-none absolute inset-0 noir-scanlines opacity-[0.08] mix-blend-overlay" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_circle_at_50%_40%,transparent_35%,rgba(0,0,0,0.96)_80%)]" />
         </div>
 
-        {/* center UI */}
-        <div className="relative h-full w-full grid place-items-center">
-          <form onSubmit={onSubmitPassword} className="w-full max-w-md px-8">
-            <div className="text-center select-none">
-              <div
-                className="text-[12px] font-semibold"
-                style={{
-                  color: `rgba(239,68,68,${0.75 + glow * 0.25})`,
-                  textShadow: `0 0 ${3 + glow * 14}px rgba(239,68,68,${0.18 + glow * 0.28})`,
-                }}
-              >
-                Mileage Mafia
-              </div>
+        <div className="relative h-full w-full grid place-items-center px-6">
+          <form onSubmit={onSubmitPassword} className="w-full max-w-md">
+            <div className="rounded-[28px] bg-neutral-950/55 ring-1 ring-neutral-800 shadow-[0_18px_70px_rgba(0,0,0,0.75)] overflow-hidden">
+              <div className="relative p-7 sm:p-8">
+                <div className="pointer-events-none absolute inset-0 opacity-[0.12] mix-blend-overlay noir-noise" />
+                <div className="pointer-events-none absolute inset-0 opacity-[0.10] noir-scanlines mix-blend-overlay" />
 
-              {/* Visible “input line” with blinking cursor so mobile users know where to type */}
-              <div className="mt-5 flex items-center justify-center">
-                <div className="rounded-2xl bg-black/35 ring-1 ring-white/10 px-5 py-3">
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="text-white/70 text-xs tracking-[0.45em]">
-                      {pw.length > 0 ? "•".repeat(Math.min(pw.length, 10)) : ""}
-                    </span>
-                    {caretOn ? <span className="mm-caret" aria-hidden /> : null}
+                <div className="relative">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.35em] text-neutral-500">Door Phone</div>
+                      <div
+                        className="mt-2 text-2xl sm:text-3xl font-black tracking-tight"
+                        style={{
+                          textShadow: `0 0 ${12 + glow * 18}px rgba(239,68,68,${0.05 + glow * 0.12})`,
+                        }}
+                      >
+                        State your code.
+                      </div>
+                      <div className="mt-2 text-sm text-neutral-400">No code. No entry.</div>
+                    </div>
+
+                    <div className="shrink-0 text-right">
+                      <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">Line</div>
+                      <div
+                        className={clsx(
+                          "mt-1 inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] uppercase tracking-[0.22em] ring-1",
+                          dialTone === "CALLING"
+                            ? "bg-white/5 ring-white/10 text-neutral-200"
+                            : dialTone === "DENIED"
+                            ? "bg-red-500/10 ring-red-500/20 text-red-200"
+                            : dialTone === "UNLATCHED"
+                            ? "bg-emerald-500/10 ring-emerald-500/20 text-emerald-200"
+                            : "bg-white/5 ring-white/10 text-neutral-400"
+                        )}
+                      >
+                        <span
+                          className={clsx(
+                            "h-1.5 w-1.5 rounded-full",
+                            dialTone === "CALLING"
+                              ? "bg-white/60 mm-dot"
+                              : dialTone === "DENIED"
+                              ? "bg-red-400"
+                              : dialTone === "UNLATCHED"
+                              ? "bg-emerald-400"
+                              : "bg-white/25"
+                          )}
+                        />
+                        {dialTone === "CALLING"
+                          ? "DIALING"
+                          : dialTone === "DENIED"
+                          ? "DENIED"
+                          : dialTone === "UNLATCHED"
+                          ? "UNLATCHED"
+                          : "STANDBY"}
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Real input (tiny + transparent) but NOT zero-sized, so mobile keyboard triggers */}
-                  <input
-                    ref={pwRef}
-                    type="password"
-                    value={pw}
-                    inputMode="text"
-                    autoComplete="current-password"
-                    enterKeyHint="go"
-                    onChange={(e) => setPw(e.target.value)}
-                    aria-label="Password"
-                    className="mt-3 w-full bg-transparent text-white/0 caret-transparent outline-none"
-                    style={{
-                      // keep it tappable; don't make it 0 height/width
-                      height: 1,
-                      opacity: 0.01,
-                    }}
-                  />
+                  <div className="mt-7">
+                    <label className="block text-[10px] uppercase tracking-[0.35em] text-neutral-600">Code</label>
+                    <input
+                      ref={pwRef}
+                      type="password"
+                      value={pw}
+                      onChange={(e) => setPw(e.target.value)}
+                      autoComplete="current-password"
+                      enterKeyHint="go"
+                      placeholder="••••••"
+                      className={clsx(
+                        "mt-2 w-full rounded-2xl bg-black/50 px-4 py-4 text-base tracking-[0.18em]",
+                        "ring-1 outline-none transition",
+                        err ? "ring-red-500/35 focus:ring-red-500/45" : "ring-white/10 focus:ring-red-500/25"
+                      )}
+                    />
+
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <div className="text-xs text-neutral-500">Tap to type • Enter to submit</div>
+                      <button
+                        type="submit"
+                        className={clsx(
+                          "px-4 py-2 rounded-full text-sm font-semibold transition",
+                          "bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10"
+                        )}
+                      >
+                        Call
+                      </button>
+                    </div>
+
+                    {audioBlocked ? (
+                      <div className="mt-4">
+                        <button
+                          type="button"
+                          onClick={() => void startAmbienceOnFirstGesture()}
+                          className="px-5 py-2.5 rounded-full bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition text-sm"
+                        >
+                          Enable Audio
+                        </button>
+                      </div>
+                    ) : null}
+
+                    {err ? <div className="mt-4 text-red-200 text-[11px] tracking-[0.25em] uppercase">{err}</div> : null}
+
+                    {dialTone === "UNLATCHED" ? (
+                      <div className="mt-4 text-emerald-200 text-[11px] tracking-[0.25em] uppercase">Door unlatched.</div>
+                    ) : null}
+                  </div>
+
+                  <button type="submit" className="hidden" aria-hidden />
                 </div>
               </div>
 
-              <div className="mt-3 text-[11px] uppercase tracking-[0.25em] text-neutral-600">
-                Tap to type • Enter to submit
+              <div className="border-t border-white/5 px-7 py-4">
+                <div className="grid grid-cols-12 gap-1 opacity-60">
+                  {Array.from({ length: 48 }).map((_, i) => (
+                    <span key={i} className="h-[3px] rounded-full bg-white/10" />
+                  ))}
+                </div>
               </div>
-
-              {err ? (
-                <div className="mt-4 text-red-300 text-[11px] tracking-[0.25em] uppercase">{err}</div>
-              ) : null}
             </div>
-
-            {/* hidden submit button keeps mobile "Go" behavior reliable */}
-            <button type="submit" className="hidden" aria-hidden />
           </form>
         </div>
 
         <style>{`
-          @keyframes mmSeamShake {
-            0% { transform: translateX(-1px); }
-            25% { transform: translateX(-3px); }
-            50% { transform: translateX(1px); }
-            75% { transform: translateX(-2px); }
-            100% { transform: translateX(-1px); }
-          }
-
-          /* Blinking cursor */
-          .mm-caret{
-            width: 10px;
-            height: 14px;
-            border-radius: 2px;
-            background: rgba(255,255,255,0.65);
-            box-shadow: 0 0 12px rgba(239,68,68,0.12);
-            animation: mmCaret 900ms steps(1,end) infinite;
-          }
-          @keyframes mmCaret {
-            0%, 49% { opacity: 0.9; }
-            50%, 100% { opacity: 0.0; }
-          }
+          .mm-dot{ animation: mmDot 900ms ease-in-out infinite; }
+          @keyframes mmDot{ 0%,100%{ opacity: .25 } 50%{ opacity: .9 } }
         `}</style>
       </main>
     );
   }
 
-  /**
-   * =========================
-   * OATH / REVIEW / GRANTED
-   * =========================
-   */
   return (
     <main className="min-h-screen bg-neutral-950 text-white relative overflow-hidden">
-      {/* background */}
+      {/* noir bg */}
       <div className="pointer-events-none absolute inset-0 noir-crt">
         <div className="absolute inset-0 bg-[#050505]" />
         <div className="absolute inset-0 mm-drift opacity-[0.36]">
@@ -431,11 +457,10 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-[radial-gradient(1200px_circle_at_50%_35%,transparent_40%,rgba(0,0,0,0.96)_82%)]" />
       </div>
 
-      {/* REVIEW overlay */}
       {step === "REVIEW" ? (
         <div className="absolute inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/55 backdrop-blur-[2px]" />
-          <div className="relative w-[min(560px,92vw)] rounded-3xl bg-black/70 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_18px_70px_rgba(0,0,0,0.75)] overflow-hidden">
+          <div className="relative w-[min(620px,92vw)] rounded-3xl bg-black/70 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_18px_70px_rgba(0,0,0,0.75)] overflow-hidden">
             <div className="px-10 py-9 text-center">
               <div className="text-xs uppercase tracking-[0.35em] text-neutral-500 mb-3">Case File Processing</div>
               <div className="text-2xl md:text-3xl font-black tracking-tight">REVIEWING</div>
@@ -447,195 +472,260 @@ export default function LoginPage() {
 
               <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">
                 Status:{" "}
-                {reviewCleared ? (
-                  <span className="mm-cleared font-semibold">CLEARED</span>
-                ) : (
-                  <span className="text-neutral-500">Reviewing</span>
-                )}
+                {reviewCleared ? <span className="mm-cleared font-semibold">CLEARED</span> : <span className="text-neutral-500">Reviewing</span>}
               </div>
             </div>
           </div>
         </div>
       ) : null}
 
-      {/* GRANTED overlay */}
       {step === "GRANTED" ? (
         <div className="absolute inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-white/10 mm-flash" />
 
-          <div className="relative">
-            <div className="bg-black/70 backdrop-blur-xl ring-1 ring-white/10 rounded-3xl px-10 py-8 text-center w-[min(560px,92vw)] shadow-[0_18px_70px_rgba(0,0,0,0.75)] animate-[mmInduct_600ms_ease-out_both]">
-              <div className="text-xs uppercase tracking-[0.35em] text-neutral-500 mb-3">Mileage Mafia</div>
-              <div className="text-3xl md:text-4xl font-black tracking-tight">INDUCTED</div>
-              <div className="mt-4 text-neutral-400 text-sm">Your entry has been recorded.</div>
+          <div className="relative w-[min(640px,92vw)]">
+            <div className="rounded-3xl bg-black/70 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_18px_70px_rgba(0,0,0,0.80)] overflow-hidden">
+              <div className="relative px-10 py-9 text-center">
+                <div className="text-xs uppercase tracking-[0.35em] text-neutral-500 mb-3">Mileage Mafia</div>
+                <div className="text-3xl md:text-4xl font-black tracking-tight">INDUCTED</div>
+                <div className="mt-3 text-neutral-400 text-sm">Your entry has been recorded.</div>
 
-              <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={goLedger}
-                  className={[
-                    "px-6 py-3 rounded-2xl font-black transition",
-                    "bg-white text-black hover:opacity-90",
-                    `ring-1 ${ACCENT.ring}`,
-                  ].join(" ")}
-                >
-                  View the Ledger →
-                </button>
+                <div className="relative mt-7 h-24 grid place-items-center">
+                  <div className="mm-filed">
+                    <div className="mm-filed__inner">FILED • MM-2026</div>
+                  </div>
 
-                <button
-                  type="button"
-                  onClick={resetBackToLock}
-                  className="px-6 py-3 rounded-2xl font-semibold bg-white/5 ring-1 ring-white/10 text-neutral-300 hover:bg-white/10 transition"
-                >
-                  Back to Door
-                </button>
-              </div>
+                  <div className="mm-stamper" aria-hidden>
+                    <div className="mm-stamper__top" />
+                    <div className="mm-stamper__base" />
+                  </div>
+                </div>
 
-              {/* Audio fallback (no fade, just "play") */}
-              {audioBlocked ? (
-                <div className="mt-4">
+                <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={tryPlayAudio}
-                    className="px-5 py-2.5 rounded-full bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition text-sm"
+                    onClick={goLedger}
+                    className={[
+                      "px-6 py-3 rounded-2xl font-black transition",
+                      "bg-white text-black hover:opacity-90",
+                      `ring-1 ${ACCENT.ring}`,
+                    ].join(" ")}
                   >
-                    Enable Audio
+                    View the Ledger →
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={resetBackToLock}
+                    className="px-6 py-3 rounded-2xl font-semibold bg-white/5 ring-1 ring-white/10 text-neutral-300 hover:bg-white/10 transition"
+                  >
+                    Back to Door
                   </button>
                 </div>
-              ) : null}
 
-              <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">
-                Status: <span className="mm-cleared font-semibold">CLEARED</span>
+                {audioBlocked ? (
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={() => void playNoirAtStampOnce()}
+                      className="px-5 py-2.5 rounded-full bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition text-sm"
+                    >
+                      Enable Audio
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">
+                  Status: <span className="mm-cleared font-semibold">CLEARED</span>
+                </div>
+                <div className="mt-3 text-[10px] text-neutral-600">(Enter = Ledger • Esc = Door)</div>
               </div>
-
-              <div className="mt-3 text-[10px] text-neutral-600">(Enter = Ledger • Esc = Door)</div>
             </div>
           </div>
         </div>
       ) : null}
 
-      {/* OATH */}
       {step === "OATH" ? (
-        <div className="relative max-w-xl mx-auto px-6 py-20">
-          <div className="relative rounded-[28px] overflow-hidden ring-1 ring-neutral-700/60 bg-neutral-950/55 backdrop-blur-xl shadow-[0_18px_70px_rgba(0,0,0,0.75)]">
-            <div className="pointer-events-none absolute inset-0 opacity-[0.16] mix-blend-overlay noir-noise" />
-            <div className="pointer-events-none absolute inset-0 opacity-[0.12] noir-scanlines mix-blend-overlay" />
+        <div className="relative max-w-5xl mx-auto px-6 py-16">
+          <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6">
+            <aside className="rounded-3xl bg-neutral-950/55 ring-1 ring-neutral-800 shadow-[0_18px_70px_rgba(0,0,0,0.65)] overflow-hidden">
+              <div className="relative p-7">
+                <div className="pointer-events-none absolute inset-0 opacity-[0.12] mix-blend-overlay noir-noise" />
+                <div className="pointer-events-none absolute inset-0 opacity-[0.10] noir-scanlines mix-blend-overlay" />
 
-            <div className="relative p-8 sm:p-10">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="text-[11px] uppercase tracking-[0.35em] text-neutral-400">Case File • Mileage Mafia</div>
-                  <h2 className="mt-2 text-3xl sm:text-4xl font-black tracking-tight">Articles of Entry</h2>
-                  <p className="mt-3 text-neutral-400 text-sm leading-relaxed">Confirm each article. Sign your name.</p>
-                </div>
+                <div className="relative">
+                  <div className="text-[11px] uppercase tracking-[0.35em] text-neutral-500">Case File</div>
+                  <div className="mt-2 text-2xl font-black tracking-tight">MM / ENTRY</div>
 
-                <button
-                  type="button"
-                  onClick={resetBackToLock}
-                  className="shrink-0 px-4 py-2 rounded-full bg-white/5 ring-1 ring-white/10 text-neutral-300 text-sm hover:bg-white/10 transition"
-                >
-                  Back
-                </button>
-              </div>
+                  <div className="mt-6 space-y-3 text-sm">
+                    <div className="rounded-2xl bg-black/35 ring-1 ring-white/10 p-4">
+                      <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">STATUS</div>
+                      <div className="mt-2 font-semibold text-neutral-200">PENDING ARTICLES</div>
+                      <div className="mt-2 text-xs text-neutral-500">Complete the dossier to proceed.</div>
+                    </div>
 
-              <div className="mt-8 space-y-3">
-                {RULES.map((r, idx) => {
-                  const accepted = !!checks[r.id];
-
-                  return (
-                    <label
-                      key={r.id}
-                      className={[
-                        "group relative flex items-start gap-3 px-4 py-3 transition cursor-pointer",
-                        "ring-1 ring-neutral-800 bg-neutral-950/35 hover:bg-white/[0.03]",
-                        "rounded-xl",
-                        accepted ? `${ACCENT.bgSoft} ring-1 ${ACCENT.ringStrong}` : "",
-                      ].join(" ")}
-                    >
-                      <span className="relative mt-[3px] shrink-0">
-                        <input
-                          type="checkbox"
-                          checked={accepted}
-                          onChange={() => toggleRule(r.id)}
-                          className="peer absolute inset-0 h-5 w-5 opacity-0 cursor-pointer"
-                          aria-label={`Accept ${r.id}`}
-                        />
-
-                        <span className="relative grid place-items-center h-5 w-5 rounded-full ring-1 ring-neutral-600/80 bg-black/40 transition peer-hover:ring-red-500/40 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-red-500/50">
-                          <span
-                            className={[
-                              "h-[7px] w-[7px] rounded-full bg-red-500/90 transition",
-                              accepted ? "scale-100 opacity-100" : "scale-0 opacity-0",
-                            ].join(" ")}
-                          />
-                        </span>
-
-                        {accepted ? <span className="pointer-events-none absolute -inset-2 rounded-full mm-notary" /> : null}
-                      </span>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] uppercase tracking-[0.25em] text-neutral-500">
-                            Article {String(idx + 1).padStart(2, "0")}
+                    <div className="rounded-2xl bg-black/35 ring-1 ring-white/10 p-4">
+                      <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">CHECKLIST</div>
+                      <div className="mt-2 text-neutral-300">
+                        <div className="flex items-center justify-between text-sm">
+                          <span>Articles</span>
+                          <span className="tabular-nums">
+                            {Object.values(checks).filter(Boolean).length}/{RULES.length}
                           </span>
-
-                          {accepted ? (
-                            <span className={["text-[11px] uppercase tracking-[0.22em]", ACCENT.text].join(" ")}>Accepted</span>
-                          ) : (
-                            <span className="text-[11px] uppercase tracking-[0.22em] text-neutral-600">Pending</span>
-                          )}
                         </div>
-
-                        <div className="relative mt-1">
-                          <div className={["text-neutral-200 font-mono text-[13.5px] leading-snug", accepted ? "opacity-90" : ""].join(" ")}>
-                            <span className={accepted ? "mm-strike" : ""}>{r.text}</span>
-                          </div>
-
-                          {accepted ? <div className="pointer-events-none absolute right-0 top-[-4px] mm-stamp">INKED</div> : null}
+                        <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className="h-full bg-red-500/70"
+                            style={{
+                              width: `${Math.round(
+                                (Object.values(checks).filter(Boolean).length / Math.max(1, RULES.length)) * 100
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="mt-3 flex items-center justify-between text-sm">
+                          <span>Signature</span>
+                          <span className="tabular-nums">{signed ? "OK" : "—"}</span>
                         </div>
                       </div>
-                    </label>
-                  );
-                })}
-              </div>
+                    </div>
 
-              <div className="mt-10 rounded-2xl ring-1 ring-neutral-800 bg-neutral-950/35 p-5">
-                <div className="text-xs uppercase tracking-[0.3em] text-neutral-500">Signature</div>
-                <div className="mt-3">
-                  <input
-                    value={sig}
-                    onChange={(e) => setSig(e.target.value)}
-                    placeholder="Type full name"
-                    className="w-full bg-transparent px-1 py-3 text-lg font-semibold tracking-wide outline-none border-b border-neutral-700 focus:border-red-400/60 transition"
-                  />
-                  <div className="mt-2 text-xs text-neutral-500">{signed ? "✅ Signed." : "Type at least 3 characters to sign."}</div>
+                    <button
+                      type="button"
+                      onClick={resetBackToLock}
+                      className="w-full px-5 py-3 rounded-2xl bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition font-semibold"
+                    >
+                      Back to Door
+                    </button>
+                  </div>
+
+                  <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">Tip: Enter to confirm (when ready)</div>
                 </div>
               </div>
+            </aside>
 
-              <div className="mt-8">
-                <button
-                  type="button"
-                  onClick={onSwear}
-                  disabled={!canSwear}
-                  className={[
-                    "w-full rounded-2xl py-4 font-black tracking-[0.18em] uppercase transition shadow-[0_12px_46px_rgba(0,0,0,0.65)]",
-                    canSwear ? `bg-red-500 text-black hover:brightness-110 ring-1 ${ACCENT.ringStrong}` : "bg-white text-black opacity-30 cursor-not-allowed",
-                  ].join(" ")}
-                >
-                  Confirm Entry
-                </button>
+            <section className="rounded-3xl bg-neutral-950/55 ring-1 ring-neutral-800 shadow-[0_18px_70px_rgba(0,0,0,0.75)] overflow-hidden">
+              <div className="relative p-8 sm:p-10">
+                <div className="pointer-events-none absolute inset-0 opacity-[0.16] mix-blend-overlay noir-noise" />
+                <div className="pointer-events-none absolute inset-0 opacity-[0.12] noir-scanlines mix-blend-overlay" />
 
-                <div className="mt-4 text-xs text-neutral-500">Your file will be reviewed before clearance is granted.</div>
+                <div className="relative">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-[11px] uppercase tracking-[0.35em] text-neutral-400">Mileage Mafia • Dossier</div>
+                      <h2 className="mt-2 text-3xl sm:text-4xl font-black tracking-tight">Articles of Entry</h2>
+                      <p className="mt-3 text-neutral-400 text-sm leading-relaxed">Read. Accept. Sign. File.</p>
+                    </div>
 
-                {err ? <p className="mt-4 text-red-300 text-sm">{err}</p> : null}
+                    <div className="shrink-0">
+                      <div className="rounded-2xl bg-black/35 ring-1 ring-white/10 px-4 py-3">
+                        <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">CLEARANCE</div>
+                        <div className={clsx("mt-2 text-sm font-semibold", canSwear ? "text-emerald-200" : "text-neutral-300")}>
+                          {canSwear ? "READY TO FILE" : "NOT READY"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 space-y-3">
+                    {RULES.map((r, idx) => {
+                      const accepted = !!checks[r.id];
+
+                      return (
+                        <label
+                          key={r.id}
+                          className={clsx(
+                            "group relative flex items-start gap-3 px-4 py-3 transition cursor-pointer",
+                            "ring-1 ring-neutral-800 bg-neutral-950/35 hover:bg-white/[0.03]",
+                            "rounded-xl",
+                            accepted ? `${ACCENT.bgSoft} ring-1 ${ACCENT.ringStrong}` : ""
+                          )}
+                        >
+                          <span className="relative mt-[3px] shrink-0">
+                            <input
+                              type="checkbox"
+                              checked={accepted}
+                              onChange={() => toggleRule(r.id)}
+                              className="peer absolute inset-0 h-5 w-5 opacity-0 cursor-pointer"
+                              aria-label={`Accept ${r.id}`}
+                            />
+
+                            <span className="relative grid place-items-center h-5 w-5 rounded-full ring-1 ring-neutral-600/80 bg-black/40 transition peer-hover:ring-red-500/40 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-red-500/50">
+                              <span
+                                className={clsx(
+                                  "h-[7px] w-[7px] rounded-full bg-red-500/90 transition",
+                                  accepted ? "scale-100 opacity-100" : "scale-0 opacity-0"
+                                )}
+                              />
+                            </span>
+                          </span>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] uppercase tracking-[0.25em] text-neutral-500">
+                                Article {String(idx + 1).padStart(2, "0")}
+                              </span>
+
+                              {accepted ? (
+                                <span className={clsx("text-[11px] uppercase tracking-[0.22em]", ACCENT.text)}>Accepted</span>
+                              ) : (
+                                <span className="text-[11px] uppercase tracking-[0.22em] text-neutral-600">Pending</span>
+                              )}
+                            </div>
+
+                            <div className="relative mt-1">
+                              <div className={clsx("text-neutral-200 font-mono text-[13.5px] leading-snug", accepted ? "opacity-90" : "")}>
+                                <span className={accepted ? "mm-strike" : ""}>{r.text}</span>
+                              </div>
+
+                              {accepted ? <div className="pointer-events-none absolute right-0 top-[-4px] mm-stamp">INKED</div> : null}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-10 rounded-2xl ring-1 ring-neutral-800 bg-neutral-950/35 p-5">
+                    <div className="text-xs uppercase tracking-[0.3em] text-neutral-500">Signature</div>
+                    <div className="mt-3">
+                      <input
+                        value={sig}
+                        onChange={(e) => setSig(e.target.value)}
+                        placeholder="Type full name"
+                        className="w-full bg-transparent px-1 py-3 text-lg font-semibold tracking-wide outline-none border-b border-neutral-700 focus:border-red-400/60 transition"
+                      />
+                      <div className="mt-2 text-xs text-neutral-500">{signed ? "✅ Signed." : "Type at least 3 characters to sign."}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-8">
+                    <button
+                      type="button"
+                      onClick={onSwear}
+                      disabled={!canSwear}
+                      className={clsx(
+                        "w-full rounded-2xl py-4 font-black tracking-[0.18em] uppercase transition shadow-[0_12px_46px_rgba(0,0,0,0.65)]",
+                        canSwear
+                          ? `bg-red-500 text-black hover:brightness-110 ring-1 ${ACCENT.ringStrong}`
+                          : "bg-white text-black opacity-30 cursor-not-allowed"
+                      )}
+                    >
+                      File Dossier
+                    </button>
+
+                    <div className="mt-4 text-xs text-neutral-500">Your file will be reviewed before clearance is granted.</div>
+
+                    {err ? <p className="mt-4 text-red-300 text-sm">{err}</p> : null}
+                  </div>
+                </div>
               </div>
-            </div>
+            </section>
           </div>
         </div>
       ) : null}
 
       <style>{`
-        /* Review scan bar */
         @keyframes mmScan {
           0% { transform: translateX(-60%); opacity: 0.2; }
           20% { opacity: 0.9; }
@@ -643,7 +733,6 @@ export default function LoginPage() {
         }
         .mm-scan { animation: mmScan 900ms ease-in-out infinite; }
 
-        /* Accepted strike */
         .mm-strike { position: relative; display: inline-block; }
         .mm-strike::after {
           content: "";
@@ -658,22 +747,6 @@ export default function LoginPage() {
         }
         @keyframes mmStrike { to { transform: scaleX(1); } }
 
-        /* Notary pulse ring */
-        .mm-notary {
-          position: absolute;
-          inset: -8px;
-          border-radius: 999px;
-          box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.22);
-          animation: mmNotary 320ms ease-out both;
-          pointer-events: none;
-        }
-        @keyframes mmNotary {
-          0% { transform: scale(0.75); opacity: 0; }
-          45% { opacity: 1; }
-          100% { transform: scale(1.2); opacity: 0; }
-        }
-
-        /* Stamp */
         .mm-stamp {
           font-size: 10px;
           letter-spacing: 0.28em;
@@ -691,7 +764,6 @@ export default function LoginPage() {
           100% { opacity: 1; transform: translateY(0) rotate(-6deg) scale(1); }
         }
 
-        /* CLEARED glow */
         .mm-cleared {
           color: rgba(134, 239, 172, 0.92);
           text-shadow: 0 0 0 rgba(34, 197, 94, 0);
@@ -701,6 +773,65 @@ export default function LoginPage() {
           0% { text-shadow: 0 0 0 rgba(34, 197, 94, 0); filter: brightness(1); }
           60% { text-shadow: 0 0 14px rgba(34, 197, 94, 0.28); }
           100% { text-shadow: 0 0 22px rgba(34, 197, 94, 0.42); filter: brightness(1.08); }
+        }
+
+        .mm-stamper{
+          position: absolute;
+          top: -14px;
+          left: 50%;
+          width: 120px;
+          height: 120px;
+          transform: translateX(-50%) translateY(-88px) rotate(-8deg);
+          animation: mmSlam 720ms cubic-bezier(.2,.9,.2,1) both;
+          filter: drop-shadow(0 18px 30px rgba(0,0,0,0.55));
+          opacity: 0.95;
+        }
+        .mm-stamper__top{
+          position:absolute;
+          left: 28px;
+          top: 6px;
+          width: 64px;
+          height: 40px;
+          border-radius: 18px 18px 12px 12px;
+          background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.02));
+          box-shadow: inset 0 -6px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.10);
+        }
+        .mm-stamper__base{
+          position:absolute;
+          left: 18px;
+          top: 44px;
+          width: 84px;
+          height: 62px;
+          border-radius: 16px;
+          background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+          box-shadow: inset 0 -10px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(255,255,255,0.10);
+        }
+        @keyframes mmSlam{
+          0%{ transform: translateX(-50%) translateY(-104px) rotate(-10deg); }
+          70%{ transform: translateX(-50%) translateY(10px) rotate(-8deg); }
+          80%{ transform: translateX(-50%) translateY(2px) rotate(-8deg); }
+          100%{ transform: translateX(-50%) translateY(6px) rotate(-8deg); }
+        }
+        .mm-filed{
+          position: relative;
+          transform: rotate(-8deg);
+          opacity: 0;
+          animation: mmFiledIn 180ms ease-out 540ms forwards;
+        }
+        .mm-filed__inner{
+          font-size: 13px;
+          letter-spacing: 0.34em;
+          text-transform: uppercase;
+          color: rgba(239, 68, 68, 0.78);
+          border: 2px solid rgba(239, 68, 68, 0.35);
+          padding: 10px 18px;
+          border-radius: 14px;
+          background: rgba(239, 68, 68, 0.07);
+          box-shadow: 0 0 22px rgba(239,68,68,0.12);
+        }
+        @keyframes mmFiledIn{
+          from{ opacity: 0; transform: rotate(-8deg) scale(0.98); }
+          to{ opacity: 1; transform: rotate(-8deg) scale(1); }
         }
       `}</style>
     </main>

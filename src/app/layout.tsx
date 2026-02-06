@@ -3,7 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import AuthGate from "@/components/AuthGate";
-import AudioProvider from "@/components/AudioProvider";
+import { AudioProvider } from "@/components/AudioProvider";
+import Link from "next/link";
 
 const geistSans = Geist({
   subsets: ["latin"],

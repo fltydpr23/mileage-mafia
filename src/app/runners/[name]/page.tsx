@@ -173,6 +173,31 @@ function getTierProgress(km: number) {
 
   return { current, next, pct, kmToNext, curMin, nextMin };
 }
+type AcceptedContract = {
+  contractId: string;
+  title: string;
+  period: string;
+  ts: string;
+  meta?: string;
+};
+
+function safeDate(ts: string) {
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function fmtAcceptedTs(ts: string) {
+  const d = safeDate(ts);
+  if (!d) return ts || "—";
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 
 export default async function RunnerPage({ params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
@@ -218,6 +243,61 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
       </div>
     );
   }
+
+  // ===== CONTRACTS (Accepted) =====
+// Sheet: API_ContractLog
+// A ts | B runner | C action | D contractId | E title | F period | G meta
+const logRaw = await getSheet("API_ContractLog!A2:G5000");
+
+const acceptedAll = (logRaw ?? [])
+  .map((r: any[]) => ({
+    ts: String(r?.[0] ?? "").trim(),
+    runner: String(r?.[1] ?? "").trim(),
+    action: String(r?.[2] ?? "").trim().toUpperCase(),
+    contractId: String(r?.[3] ?? "").trim(),
+    title: String(r?.[4] ?? "").trim(),
+    period: String(r?.[5] ?? "").trim(),
+    meta: String(r?.[6] ?? "").trim(),
+  }))
+  .filter((x) => norm(x.runner) === routeName)
+  .filter((x) => x.action === "ACCEPTED")
+  .filter((x) => x.contractId);
+
+// Dedup by contractId (keep newest)
+const map = new Map<string, AcceptedContract>();
+for (const x of acceptedAll) {
+  const prev = map.get(x.contractId);
+  if (!prev) {
+    map.set(x.contractId, {
+      contractId: x.contractId,
+      title: x.title || x.contractId,
+      period: x.period || "—",
+      ts: x.ts,
+      meta: x.meta,
+    });
+    continue;
+  }
+
+  const tPrev = safeDate(prev.ts)?.getTime() ?? 0;
+  const tCur = safeDate(x.ts)?.getTime() ?? 0;
+  if (tCur >= tPrev) {
+    map.set(x.contractId, {
+      contractId: x.contractId,
+      title: x.title || x.contractId,
+      period: x.period || "—",
+      ts: x.ts,
+      meta: x.meta,
+    });
+  }
+}
+
+const acceptedContracts = Array.from(map.values()).sort((a, b) => {
+  const ta = safeDate(a.ts)?.getTime() ?? 0;
+  const tb = safeDate(b.ts)?.getTime() ?? 0;
+  return tb - ta;
+});
+
+
 
   // Name | Week# | WeekStart | WeekEnd | WeeklyKM
   const weeklyRaw = await getSheet("API_Weekly!A2:E3307");
@@ -459,6 +539,43 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
           <Stat label="📉 Worst Week" value={worstWeek ? `W${worstWeek.weekNum} • ${fmtKm(worstWeek.km)} km` : "—"} />
         </section>
 
+        {/* ACCEPTED CONTRACTS */}
+<section className="bg-neutral-900/70 rounded-3xl p-8 ring-1 ring-neutral-800">
+  <div className="text-neutral-400 text-xs uppercase tracking-wider">Paper</div>
+  <div className="text-2xl font-bold mt-2">Active Contracts</div>
+  <div className="text-neutral-500 text-sm mt-1">
+    Clauses this runner has signed. Permanent record.
+  </div>
+
+  {acceptedContracts.length === 0 ? (
+    <div className="mt-6 text-neutral-500 text-sm">No accepted contracts yet.</div>
+  ) : (
+    <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+      {acceptedContracts.map((c) => (
+        <div
+          key={c.contractId}
+          className="rounded-2xl ring-1 ring-neutral-800 bg-neutral-950/40 p-5"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs uppercase tracking-[0.3em] text-neutral-500">
+              {c.period}
+            </div>
+            <div className="text-xs text-neutral-500">{fmtAcceptedTs(c.ts)}</div>
+          </div>
+
+          <div className="mt-2 text-lg font-semibold text-white">
+            {c.title}
+          </div>
+
+          <div className="mt-2 text-xs text-neutral-500">
+            ID: <span className="text-neutral-300">{c.contractId}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )}
+</section>
+
         {/* WEEKLY BARS */}
         <section className="bg-neutral-900/70 rounded-3xl p-8 ring-1 ring-neutral-800">
           <div className="text-neutral-400 text-xs uppercase tracking-wider">Trend</div>
@@ -472,6 +589,7 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
             <div className="text-neutral-500 text-sm mt-4">No completed weekly data found yet for this runner.</div>
           ) : null}
         </section>
+
 
         {/* CHARTS */}
         <section className="space-y-4">

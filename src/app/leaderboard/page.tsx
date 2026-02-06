@@ -4,6 +4,7 @@ import NowPlaying from "@/components/NowPlaying";
 import PotChip from "@/components/PotChip";
 
 
+
 export const dynamic = "force-dynamic";
 
 function toNum(v: any) {
@@ -35,13 +36,13 @@ function initials(name: string) {
  */
 export const MAFIA_LEVELS = [
   {
-    minKm: 1500,
+    minKm: 1800,
     name: "Godfather",
     // Blood Red
     pill: "bg-red-900 text-red-50 ring-1 ring-red-700/40",
     tint: "bg-red-900/15 ring-red-700/35",
     bar: "bg-red-800",
-    desc: "1500+ km",
+    desc: "1800+ km",
   },
   {
     minKm: 1000,
@@ -50,7 +51,7 @@ export const MAFIA_LEVELS = [
     pill: "bg-rose-950 text-rose-50 ring-1 ring-rose-700/35",
     tint: "bg-rose-950/15 ring-rose-700/30",
     bar: "bg-rose-800",
-    desc: "1000–1499 km",
+    desc: "1000–1799 km",
   },
   {
     minKm: 500,
@@ -155,6 +156,7 @@ export default async function LeaderboardPage() {
             <PotChip total={totalPot} oathPot={oathPot} penaltyFund={penaltyFund} />
           </div>
         </div>
+
       </header>
 
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
@@ -246,50 +248,83 @@ export default async function LeaderboardPage() {
             </div>
           </div>
 
-          {/* Side hero */}
-          <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10">
-            <p className="text-neutral-400 text-xs uppercase tracking-wider">
-              Hierarchy
-            </p>
-            <h2 className="text-xl font-bold mt-2">Family levels</h2>
-            <p className="text-neutral-500 text-sm mt-2">
-              Levels are based on{" "}
-              <span className="text-neutral-300">yearly KM</span>.
-            </p>
+          {/* Side column */}
+          <div className="space-y-4 sm:space-y-6">
+            {/* Hierarchy */}
+            <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10">
+              <p className="text-neutral-400 text-xs uppercase tracking-wider">
+                Hierarchy
+              </p>
+              <h2 className="text-xl font-bold mt-2">Family levels</h2>
+              <p className="text-neutral-500 text-sm mt-2">
+                Levels are based on{" "}
+                <span className="text-neutral-300">yearly KM</span>.
+              </p>
 
-            <div className="mt-6 space-y-4">
-              {MAFIA_LEVELS.map((lvl) => {
-                const count = rows.filter(
-                  (r) => getMafiaLevel(r.yearlyKm).name === lvl.name
-                ).length;
+              <div className="mt-6 space-y-4">
+                {MAFIA_LEVELS.map((lvl) => {
+                  const count = rows.filter(
+                    (r) => getMafiaLevel(r.yearlyKm).name === lvl.name
+                  ).length;
 
-                return (
-                  <div
-                    key={lvl.name}
-                    className="flex items-start justify-between gap-4"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={`px-3 py-1 rounded-full text-[11px] font-extrabold ${lvl.pill}`}
-                        >
-                          {lvl.name}
-                        </span>
-                        <span className="text-neutral-500 text-xs">{lvl.desc}</span>
+                  return (
+                    <div
+                      key={lvl.name}
+                      className="flex items-start justify-between gap-4"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`px-3 py-1 rounded-full text-[11px] font-extrabold ${lvl.pill}`}
+                          >
+                            {lvl.name}
+                          </span>
+                          <span className="text-neutral-500 text-xs">{lvl.desc}</span>
+                        </div>
                       </div>
-                    </div>
 
-                    <span className="text-white font-semibold tabular-nums">
-                      {count}
-                    </span>
-                  </div>
-                );
-              })}
+                      <span className="text-white font-semibold tabular-nums">
+                        {count}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <p className="mt-6 text-neutral-600 text-xs">
+                Pro tip: consistency beats hero weeks.
+              </p>
             </div>
 
-            <p className="mt-6 text-neutral-600 text-xs">
-              Pro tip: consistency beats hero weeks.
-            </p>
+            {/* Contracts */}
+            <Link
+              href="/contracts"
+              className="group block rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10 hover:bg-white/[0.04] transition shadow-[0_18px_70px_rgba(0,0,0,0.55)]"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-neutral-400 text-xs uppercase tracking-wider">
+                    Paper
+                  </div>
+                  <div className="mt-2 flex items-center gap-2 min-w-0">
+                    <div className="text-xl font-black tracking-tight truncate">
+                      Contracts
+                    </div>
+                    <span className="shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold bg-red-500/10 text-red-200 ring-1 ring-red-500/20">
+                      New
+                    </span>
+                  </div>
+                  <p className="mt-2 text-neutral-500 text-sm leading-relaxed">
+                    Weekly/monthly clauses. Accept them. Every signature hits the Paper Trail.
+                  </p>
+                </div>
+
+                <div className="shrink-0 inline-flex items-center gap-2 text-sm font-semibold text-neutral-200 mt-1">
+                  Open
+                  <span className="transition-transform group-hover:translate-x-0.5">→</span>
+                </div>
+              </div>
+            </Link>
           </div>
         </section>
 
