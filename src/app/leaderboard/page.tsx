@@ -3,8 +3,6 @@ import { getSheet } from "@/lib/sheets";
 import NowPlaying from "@/components/NowPlaying";
 import PotChip from "@/components/PotChip";
 
-
-
 export const dynamic = "force-dynamic";
 
 function toNum(v: any) {
@@ -32,13 +30,12 @@ function initials(name: string) {
  * - tint: used for avatar chips / light level wash (must work with `ring-1 ${tint}`)
  * - bar: progress bar fill
  *
- * NOTE: These same tokens should be reused on runner pages for cards + progress bars.
+ * NOTE: Reuse these tokens on runner pages for cards + progress bars.
  */
 export const MAFIA_LEVELS = [
   {
     minKm: 1800,
     name: "Godfather",
-    // Blood Red
     pill: "bg-red-900 text-red-50 ring-1 ring-red-700/40",
     tint: "bg-red-900/15 ring-red-700/35",
     bar: "bg-red-800",
@@ -47,7 +44,6 @@ export const MAFIA_LEVELS = [
   {
     minKm: 1000,
     name: "Underboss",
-    // Burgundy (wine)
     pill: "bg-rose-950 text-rose-50 ring-1 ring-rose-700/35",
     tint: "bg-rose-950/15 ring-rose-700/30",
     bar: "bg-rose-800",
@@ -56,7 +52,6 @@ export const MAFIA_LEVELS = [
   {
     minKm: 500,
     name: "Area Don",
-    // Rust / Brass (warm metal)
     pill: "bg-amber-900 text-amber-50 ring-1 ring-amber-700/35",
     tint: "bg-amber-900/15 ring-amber-700/30",
     bar: "bg-amber-700",
@@ -65,7 +60,6 @@ export const MAFIA_LEVELS = [
   {
     minKm: 250,
     name: "Soldier",
-    // Gunmetal (cold steel)
     pill: "bg-slate-700 text-slate-50 ring-1 ring-slate-400/25",
     tint: "bg-slate-800/20 ring-slate-400/20",
     bar: "bg-slate-500",
@@ -74,8 +68,6 @@ export const MAFIA_LEVELS = [
   {
     minKm: 0,
     name: "Associate",
-    // ✅ Deep Noir Green (NOT bright emerald)
-    // Goal: feels like "night-vision green" but muted + classy.
     pill: "bg-emerald-950 text-emerald-50 ring-1 ring-emerald-700/30",
     tint: "bg-emerald-950/18 ring-emerald-700/25",
     bar: "bg-emerald-700",
@@ -111,18 +103,26 @@ export default async function LeaderboardPage() {
 
   const totalRunners = rows.length;
 
-  // Pot logic
+  // ===== POT LOGIC =====
   const oathPot = totalRunners * 1000;
-  // TODO: wire to Sheets later
-  const penaltyFund = 0;
+
+  // Penalties: Kumaran + Rishi paid ₹500 each
+  const PENALTIES = [
+    { name: "Kumaran", amount: 500, reason: "Bribery" },
+    { name: "Rishi", amount: 500, reason: "Bribery" },
+  ] as const;
+
+  const penaltyFund = PENALTIES.reduce((s, p) => s + p.amount, 0);
   const totalPot = oathPot + penaltyFund;
 
+  // ===== STATS =====
   const totalKm = rows.reduce((s, r) => s + r.yearlyKm, 0);
+  const totalTargetKm = rows.reduce((s, r) => s + r.annualTarget, 0);
   const avgCompletion = totalRunners
     ? rows.reduce((s, r) => s + r.completion, 0) / totalRunners
     : 0;
 
-  const leader = [...rows].sort((a, b) => b.completion - a.completion)[0];
+  const leader = sorted[0];
   const leaderLvl = leader ? getMafiaLevel(leader.yearlyKm) : null;
 
   const APP_HEADER_H = 72; // px
@@ -152,18 +152,27 @@ export default async function LeaderboardPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              href="/challenges"
+              className="px-3 sm:px-4 py-2 rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10 transition text-xs sm:text-sm font-semibold"
+            >
+              Challenges
+            </Link>
+
             <Chip label="Runners" value={String(totalRunners)} />
             <PotChip total={totalPot} oathPot={oathPot} penaltyFund={penaltyFund} />
           </div>
+          <div className="hidden sm:block text-neutral-500 text-xs tabular-nums ml-2">
+  Last Update: 1st Feb • 22:14 IST
+</div>
         </div>
-
       </header>
 
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        {/* Hero row */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        {/* HERO ROW (premium + consistent sizing) */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
           {/* Main hero */}
-          <div className="lg:col-span-2 rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10">
+          <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-8 shadow-[0_18px_70px_rgba(0,0,0,0.55)]">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-5">
               <div className="space-y-2 min-w-0">
                 <p className="text-neutral-400 text-xs uppercase tracking-wider">
@@ -174,11 +183,19 @@ export default async function LeaderboardPage() {
                   <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight leading-tight truncate">
                     {leader ? leader.name : "—"}
                   </h1>
+
                   {leaderLvl ? (
                     <span
                       className={`px-3 py-1 rounded-full text-[11px] font-extrabold ${leaderLvl.pill}`}
                     >
                       {leaderLvl.name}
+                    </span>
+                  ) : null}
+
+                  {/* Leader bonus pill (for #1 runner) */}
+                  {leader ? (
+                    <span className="px-3 py-1 rounded-full text-[11px] font-extrabold bg-white/5 ring-1 ring-white/10 text-neutral-200">
+                      +₹ 1,000
                     </span>
                   ) : null}
                 </div>
@@ -206,7 +223,8 @@ export default async function LeaderboardPage() {
               ) : null}
             </div>
 
-            <div className="mt-5 sm:mt-6 space-y-3">
+            {/* Group completion bar (kept tight) */}
+            <div className="mt-6">
               <div className="flex items-end justify-between">
                 <div>
                   <p className="text-neutral-300 font-semibold">
@@ -225,7 +243,7 @@ export default async function LeaderboardPage() {
                 </p>
               </div>
 
-              <div className="h-3 bg-neutral-800 rounded-full overflow-hidden">
+              <div className="mt-3 h-3 bg-neutral-800 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-white"
                   style={{
@@ -234,16 +252,48 @@ export default async function LeaderboardPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 pt-2">
-                <MiniKpi
-                  label="Total KM logged"
-                  value={`${Math.round(totalKm).toLocaleString("en-IN")} km`}
-                />
-                <MiniKpi
-                  label="Prize pool"
-                  value={`₹${totalPot.toLocaleString("en-IN")}`}
-                />
-                <MiniKpi label="House rule" value="Respect the Code." />
+              {/* 3 metrics row + 1 standout house rule block */}
+              <div className="mt-5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-2xl bg-neutral-950/50 ring-1 ring-neutral-800 px-5 py-4">
+                    <p className="text-neutral-500 text-xs uppercase tracking-wider">
+                      Total Target KM
+                    </p>
+                    <p className="text-white font-black text-lg mt-2 tabular-nums">
+                      {Math.round(totalTargetKm).toLocaleString("en-IN")} km
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-neutral-950/50 ring-1 ring-neutral-800 px-5 py-4">
+                    <p className="text-neutral-500 text-xs uppercase tracking-wider">
+                      Total KM Logged
+                    </p>
+                    <p className="text-white font-black text-lg mt-2 tabular-nums">
+                      {Math.round(totalKm).toLocaleString("en-IN")} km
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-neutral-950/50 ring-1 ring-neutral-800 px-5 py-4">
+                    <p className="text-neutral-500 text-xs uppercase tracking-wider">
+                      Avg Group Completion
+                    </p>
+                    <p className="text-white font-black text-lg mt-2 tabular-nums">
+                      {avgCompletion.toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-3xl bg-gradient-to-br from-red-500/12 via-red-500/6 to-transparent ring-1 ring-red-500/30 px-6 py-6 shadow-[0_0_44px_rgba(239,68,68,0.16)] relative overflow-hidden">
+                  <div className="pointer-events-none absolute inset-0 opacity-[0.25] bg-[radial-gradient(700px_circle_at_18%_30%,rgba(239,68,68,0.25),transparent_60%)]" />
+                  <div className="relative">
+                    <p className="text-neutral-500 text-xs uppercase tracking-[0.3em]">
+                      House Rule
+                    </p>
+                    <p className="mt-3 text-xl sm:text-2xl font-black tracking-tight text-red-200">
+                      Respect the Oath.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -251,7 +301,7 @@ export default async function LeaderboardPage() {
           {/* Side column */}
           <div className="space-y-4 sm:space-y-6">
             {/* Hierarchy */}
-            <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10">
+            <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-8 shadow-[0_18px_70px_rgba(0,0,0,0.45)]">
               <p className="text-neutral-400 text-xs uppercase tracking-wider">
                 Hierarchy
               </p>
@@ -279,7 +329,9 @@ export default async function LeaderboardPage() {
                           >
                             {lvl.name}
                           </span>
-                          <span className="text-neutral-500 text-xs">{lvl.desc}</span>
+                          <span className="text-neutral-500 text-xs">
+                            {lvl.desc}
+                          </span>
                         </div>
                       </div>
 
@@ -299,7 +351,7 @@ export default async function LeaderboardPage() {
             {/* Contracts */}
             <Link
               href="/contracts"
-              className="group block rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10 hover:bg-white/[0.04] transition shadow-[0_18px_70px_rgba(0,0,0,0.55)]"
+              className="group block rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-8 hover:bg-white/[0.04] transition shadow-[0_18px_70px_rgba(0,0,0,0.55)]"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
@@ -315,13 +367,16 @@ export default async function LeaderboardPage() {
                     </span>
                   </div>
                   <p className="mt-2 text-neutral-500 text-sm leading-relaxed">
-                    Weekly/monthly clauses. Accept them. Every signature hits the Paper Trail.
+                    Weekly/monthly clauses. Accept them. Every signature hits
+                    the Paper Trail.
                   </p>
                 </div>
 
                 <div className="shrink-0 inline-flex items-center gap-2 text-sm font-semibold text-neutral-200 mt-1">
                   Open
-                  <span className="transition-transform group-hover:translate-x-0.5">→</span>
+                  <span className="transition-transform group-hover:translate-x-0.5">
+                    →
+                  </span>
                 </div>
               </div>
             </Link>
@@ -364,6 +419,11 @@ export default async function LeaderboardPage() {
               const pct = Math.min(Math.max(r.completion, 0), 100);
               const rankShown = r.rank ? r.rank : idx + 1;
 
+              const isLeader = rankShown === 1;
+              const isPenalized = PENALTIES.some(
+                (p) => p.name.toLowerCase() === r.name.toLowerCase()
+              );
+
               return (
                 <Link
                   key={r.name}
@@ -396,9 +456,24 @@ export default async function LeaderboardPage() {
                             >
                               {lvl.name}
                             </span>
+
+                            {/* Leader reward pill */}
+                            {isLeader ? (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-white/5 ring-1 ring-white/10 text-neutral-200">
+                                +₹ 1,000
+                              </span>
+                            ) : null}
+
+                            {/* Penalized pill */}
+                            {isPenalized ? (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-red-500/10 text-red-200 ring-1 ring-red-500/20">
+                                -₹ 500
+                              </span>
+                            ) : null}
+
                             <div className="text-neutral-400 text-xs tabular-nums">
-                              {Math.round(r.yearlyKm).toLocaleString("en-IN")} km
-                              {" • "}
+                              {Math.round(r.yearlyKm).toLocaleString("en-IN")}{" "}
+                              km{" • "}
                               {pct.toFixed(1)}%
                             </div>
                           </div>
@@ -417,10 +492,11 @@ export default async function LeaderboardPage() {
                         </div>
                       </div>
 
-                      <div className="text-neutral-500 text-2xl leading-none">›</div>
+                      <div className="text-neutral-500 text-2xl leading-none">
+                        ›
+                      </div>
                     </div>
                   </div>
-                  
 
                   {/* DESKTOP */}
                   <div className="hidden sm:block px-6 md:px-8 py-6 hover:bg-white/5 transition">
@@ -439,7 +515,26 @@ export default async function LeaderboardPage() {
 
                           <div className="min-w-0 w-full">
                             <div className="flex items-center justify-between gap-3">
-                              <p className="font-bold text-lg truncate">{r.name}</p>
+                              <div className="min-w-0 flex items-center gap-2">
+                                <p className="font-bold text-lg truncate">
+                                  {r.name}
+                                </p>
+
+                                {/* Leader reward pill */}
+                                {isLeader ? (
+                                  <span className="shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold bg-white/5 ring-1 ring-white/10 text-neutral-200">
+                                    +₹ 1,000
+                                  </span>
+                                ) : null}
+
+                                {/* Penalized pill */}
+                                {isPenalized ? (
+                                  <span className="shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold bg-red-500/10 text-red-200 ring-1 ring-red-500/20">
+                                    -₹ 500
+                                  </span>
+                                ) : null}
+                              </div>
+
                               <span
                                 className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold ${lvl.pill}`}
                               >
@@ -501,16 +596,9 @@ function Chip({ label, value }: { label: string; value: string }) {
   return (
     <div className="px-3 sm:px-4 py-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 text-neutral-300 text-xs sm:text-sm">
       <span className="text-neutral-500">{label}</span>
-      <span className="text-white font-semibold ml-2 tabular-nums">{value}</span>
-    </div>
-  );
-}
-
-function MiniKpi({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl bg-neutral-950/40 ring-1 ring-neutral-800 px-4 sm:px-5 py-3 sm:py-4">
-      <p className="text-neutral-500 text-xs uppercase tracking-wider">{label}</p>
-      <p className="text-white font-bold mt-2">{value}</p>
+      <span className="text-white font-semibold ml-2 tabular-nums">
+        {value}
+      </span>
     </div>
   );
 }
