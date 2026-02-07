@@ -64,13 +64,13 @@ export const MAFIA_LEVELS = [
     desc: "250–499 km",
   },
   {
-  minKm: 0,
+   minKm: 0,
   name: "Associate",
   // Gunmetal Grey (clean + minimal)
   pill: "bg-neutral-700 text-neutral-100 ring-1 ring-neutral-500/30",
   tint: "bg-neutral-800/40 ring-neutral-500/25",
   bar: "bg-neutral-500",
-  desc: "0–249 km",
+  desc: "0–249 km"
   },
 ] as const;
 
@@ -105,9 +105,9 @@ export default async function LeaderboardPage() {
   // ===== POT =====
   const oathPot = totalRunners * 1000;
 
-  // Penalties: Kumaran + Rishi paid ₹500 each (Bribery on 2 Feb 2026)
+  // Penalties: Kumar + Rishi paid ₹500 each (Bribery on 2 Feb 2026)
   const PENALTIES = [
-    { name: "Kumaran", amount: 500, reason: "Bribery", date: "2 Feb 2026" },
+    { name: "Kumar", amount: 500, reason: "Bribery", date: "2 Feb 2026" },
     { name: "Rishi", amount: 500, reason: "Bribery", date: "2 Feb 2026" },
   ] as const;
 
@@ -125,7 +125,7 @@ export default async function LeaderboardPage() {
   const leaderLvl = leader ? getMafiaLevel(leader.yearlyKm) : null;
 
   // Manual for now (later: read from Sheets)
-  const LAST_UPDATED = "2 Feb • 22:14 IST";
+  const LAST_UPDATED = "7 Feb • 20:18 IST";
 
   const APP_HEADER_H = 72; // px
   const LIST_HEADER_H = 56; // px
@@ -339,7 +339,7 @@ export default async function LeaderboardPage() {
 
                   <p className="mt-4 text-neutral-600 text-xs">
                     Penalty pool: <span className="text-neutral-300 font-semibold tabular-nums">{fmtINR(penaltyFund)}</span>{" "}
-                    (Kumaran + Rishi — bribery, 2 Feb 2026)
+                    (Kumar + Rishi — bribery, 2 Feb 2026)
                   </p>
                 </div>
 

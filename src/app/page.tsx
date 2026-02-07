@@ -1,4 +1,3 @@
-// REPLACED FILE CONTENTS
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -26,27 +25,43 @@ export default function LoginPage() {
 
   const [step, setStep] = useState<Step>("LOCK");
 
-  // LOCK (Door Phone)
+  // LOCK (Terminal)
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
-  const [dialTone, setDialTone] = useState<"IDLE" | "CALLING" | "DENIED" | "UNLATCHED">("IDLE");
+  const [terminalState, setTerminalState] = useState<
+    "IDLE" | "CONNECTING" | "DENIED" | "GRANTED"
+  >("IDLE");
   const pwRef = useRef<HTMLInputElement | null>(null);
 
   // REVIEW
   const [reviewCleared, setReviewCleared] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
 
-  const REVIEW_CLEAR_MS = 2400;
-  const REVIEW_TOTAL_MS = 3900;
+  // Tune review duration here
+  const REVIEW_CLEAR_MS = 2400; // when status flips to CLEARED
+  const REVIEW_TOTAL_MS = 3900; // when INDUCTED appears
 
+  // OATH / Case File Dossier (Articles)
   const RULES: Rule[] = useMemo(
     () => [
       { id: "target", text: "I have pledged an annual mileage target. Once sworn, this target is final." },
       { id: "entryfee", text: "I have contributed ₹1000 to the family pot. Payment is mandatory." },
-      { id: "clause85", text: "If I fail to reach 85% of my annual target by December 31st, an additional penalty of ₹1000 will be charged." },
-      { id: "first", text: "The first member to reach 100% of their annual target will receive a ₹1000 leader bonus, funded equally by the remaining members." },
-      { id: "noexcuses", text: "Conditions, injuries, devices, or circumstances do not alter the terms. Only completed distance is recognized." },
-      { id: "respect", text: "Disorder, manipulation, or disrespect will be met with penalties at the discretion of the family." },
+      {
+        id: "clause85",
+        text: "If I fail to reach 85% of my annual target by December 31st, an additional penalty of ₹1000 will be charged.",
+      },
+      {
+        id: "first",
+        text: "The first member to reach 100% of their annual target will receive a ₹1000 leader bonus, funded equally by the remaining members.",
+      },
+      {
+        id: "noexcuses",
+        text: "Conditions, injuries, devices, or circumstances do not alter the terms. Only completed distance is recognized.",
+      },
+      {
+        id: "respect",
+        text: "Disorder, manipulation, or disrespect will be met with penalties at the discretion of the family.",
+      },
       { id: "strava", text: "If the activity is not logged on Strava, it doesn't count." },
       { id: "closing", text: "I accept these terms willingly. I enter the Mileage Mafia by choice, and remain by discipline." },
     ],
@@ -73,105 +88,59 @@ export default function LoginPage() {
     setChecks((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  // -------------------------
-  // AUDIO FIX (no spam)
-  // -------------------------
-  const ambienceAttemptedRef = useRef(false);
-  const ambienceGestureDoneRef = useRef(false);
-  const grantedAudioDoneRef = useRef(false);
-
+  // ---- Audio helpers ----
   const stopAudio = useCallback(() => {
+    const a: any = audio as any;
     try {
-      audio.stop?.();
-      audio.pause?.();
-    } catch {}
-  }, [audio]);
-
-  const tryStartAmbienceOnce = useCallback(async () => {
-    if (ambienceAttemptedRef.current) return;
-    ambienceAttemptedRef.current = true;
-
-    try {
-      await audio.playAmbience();
-      setAudioBlocked(false);
+      a.stop?.();
+      a.pause?.();
     } catch {
-      // blocked is expected; we’ll start on first gesture
-      setAudioBlocked(true);
+      // ignore
     }
   }, [audio]);
 
-  const startAmbienceOnFirstGesture = useCallback(async () => {
-    if (ambienceGestureDoneRef.current) return;
-    ambienceGestureDoneRef.current = true;
-
-    try {
-      await audio.unlock();
-    } catch {}
-
+  const tryPlayAmbience = useCallback(async () => {
+    setAudioBlocked(false);
     try {
       await audio.playAmbience();
-      setAudioBlocked(false);
     } catch {
       setAudioBlocked(true);
     }
   }, [audio]);
 
-  const playNoirAtStampOnce = useCallback(async () => {
-    if (grantedAudioDoneRef.current) return;
-    grantedAudioDoneRef.current = true;
-
+  const tryPlayMusic = useCallback(async () => {
+    setAudioBlocked(false);
     try {
-      await audio.unlock();
-    } catch {}
-
-    try {
-      audio.sfx("stamp", { volume: 0.95, randomRate: [0.98, 1.02] });
-    } catch {}
-
-    // Noir immediately after stamp begins
-    window.setTimeout(async () => {
-      try {
-        await audio.playMusic(0);
-        setAudioBlocked(false);
-      } catch {
-        setAudioBlocked(true);
-      }
-    }, 30);
+      await audio.playMusic(0);
+    } catch {
+      setAudioBlocked(true);
+    }
   }, [audio]);
 
-  // LOCK: attempt ambience autoplay once
+  // Ambience should play on LOCK automatically
   useEffect(() => {
     if (step !== "LOCK") return;
-    void tryStartAmbienceOnce();
-  }, [step, tryStartAmbienceOnce]);
+    // best effort autoplay
+    void tryPlayAmbience();
+  }, [step, tryPlayAmbience]);
 
   const resetBackToLock = useCallback(() => {
     stopAudio();
     setAudioBlocked(false);
     setReviewCleared(false);
 
-    // reset audio gating
-    ambienceAttemptedRef.current = false;
-    ambienceGestureDoneRef.current = false;
-    grantedAudioDoneRef.current = false;
-
     setStep("LOCK");
     setPw("");
     setErr("");
     setChecks(initialChecks);
     setSig("");
-    setDialTone("IDLE");
+    setTerminalState("IDLE");
 
     requestAnimationFrame(() => {
       pwRef.current?.focus();
       pwRef.current?.click?.();
     });
-
-    // attempt again when back to lock
-    window.setTimeout(() => {
-      void tryStartAmbienceOnce();
-    }, 0);
-  }, [initialChecks, stopAudio, tryStartAmbienceOnce]);
+  }, [initialChecks, stopAudio]);
 
   const onSubmitPassword = useCallback(
     async (e: React.FormEvent) => {
@@ -180,13 +149,13 @@ export default function LoginPage() {
       if (step !== "LOCK") return;
 
       if (!pw.trim()) {
-        setErr("STATE YOUR CODE");
-        setDialTone("DENIED");
-        window.setTimeout(() => setDialTone("IDLE"), 650);
+        setErr("ACCESS KEY REQUIRED");
+        setTerminalState("DENIED");
+        window.setTimeout(() => setTerminalState("IDLE"), 650);
         return;
       }
 
-      setDialTone("CALLING");
+      setTerminalState("CONNECTING");
 
       const res = await fetch("/api/auth", {
         method: "POST",
@@ -196,9 +165,9 @@ export default function LoginPage() {
 
       const data = await res.json().catch(() => ({ ok: false }));
       if (!data.ok) {
-        setErr("LINE WENT DEAD");
-        setDialTone("DENIED");
-        window.setTimeout(() => setDialTone("IDLE"), 700);
+        setErr("ACCESS DENIED");
+        setTerminalState("DENIED");
+        window.setTimeout(() => setTerminalState("IDLE"), 700);
         setPw("");
         requestAnimationFrame(() => {
           pwRef.current?.focus();
@@ -207,7 +176,8 @@ export default function LoginPage() {
         return;
       }
 
-      setDialTone("UNLATCHED");
+      setTerminalState("GRANTED");
+      // tiny beat then proceed
       window.setTimeout(() => setStep("OATH"), 520);
     },
     [pw, step]
@@ -225,6 +195,7 @@ export default function LoginPage() {
     setStep("REVIEW");
   }, [canSwear, step]);
 
+  // REVIEW timers (flip → CLEARED, then → GRANTED)
   useEffect(() => {
     if (step !== "REVIEW") return;
 
@@ -237,11 +208,22 @@ export default function LoginPage() {
     };
   }, [step]);
 
-  // GRANTED: stamp + noir (once)
+  // Noir starts when INDUCTED is on-screen
   useEffect(() => {
     if (step !== "GRANTED") return;
-    void playNoirAtStampOnce();
-  }, [step, playNoirAtStampOnce]);
+
+    // optional: try to align with the stamp hit moment
+    // (keeps it feeling like the music starts "on stamp")
+    const t = window.setTimeout(() => {
+      // if you have SFX wired, this is the vibe:
+      try {
+        (audio as any).sfx?.("stamp", { volume: 0.9 });
+      } catch {}
+      void tryPlayMusic();
+    }, 220);
+
+    return () => window.clearTimeout(t);
+  }, [step, audio, tryPlayMusic]);
 
   // Hotkeys
   useEffect(() => {
@@ -279,21 +261,44 @@ export default function LoginPage() {
     }
   }, [step]);
 
+  /**
+   * =========================
+   * TERMINAL (LOCK)
+   * =========================
+   */
   if (step === "LOCK") {
-    const glow =
-      dialTone === "UNLATCHED" ? 1 : dialTone === "CALLING" ? 0.6 : dialTone === "DENIED" ? 0.35 : 0.22;
+    const statusLabel =
+      terminalState === "CONNECTING"
+        ? "CONNECTING"
+        : terminalState === "DENIED"
+        ? "DENIED"
+        : terminalState === "GRANTED"
+        ? "GRANTED"
+        : "STANDBY";
+
+    const statusTone =
+      terminalState === "CONNECTING"
+        ? "bg-white/5 ring-white/10 text-neutral-200"
+        : terminalState === "DENIED"
+        ? "bg-red-500/10 ring-red-500/20 text-red-200"
+        : terminalState === "GRANTED"
+        ? "bg-emerald-500/10 ring-emerald-500/20 text-emerald-200"
+        : "bg-white/5 ring-white/10 text-neutral-400";
+
+    const dotTone =
+      terminalState === "CONNECTING"
+        ? "bg-white/60 mm-dot"
+        : terminalState === "DENIED"
+        ? "bg-red-400"
+        : terminalState === "GRANTED"
+        ? "bg-emerald-400"
+        : "bg-white/25";
 
     return (
       <main
         className="fixed inset-0 bg-black text-white overflow-hidden"
-        onMouseDown={() => {
-          pwRef.current?.focus();
-          void startAmbienceOnFirstGesture();
-        }}
-        onTouchStart={() => {
-          pwRef.current?.focus();
-          void startAmbienceOnFirstGesture();
-        }}
+        onMouseDown={() => pwRef.current?.focus()}
+        onTouchStart={() => pwRef.current?.focus()}
       >
         {/* noir bg */}
         <div className="absolute inset-0">
@@ -302,133 +307,132 @@ export default function LoginPage() {
             className="absolute inset-0"
             style={{
               background:
-                "radial-gradient(900px circle at 50% 22%, rgba(239,68,68,0.10), transparent 55%)," +
-                "radial-gradient(1000px circle at 50% 80%, rgba(255,255,255,0.06), transparent 60%)",
+                "radial-gradient(900px circle at 50% 18%, rgba(255,255,255,0.06), transparent 55%)," +
+                "radial-gradient(900px circle at 80% 85%, rgba(239,68,68,0.08), transparent 58%)",
               opacity: 0.95,
             }}
           />
           <div className="pointer-events-none absolute inset-0 noir-noise opacity-[0.12] mix-blend-overlay" />
-          <div className="pointer-events-none absolute inset-0 noir-scanlines opacity-[0.08] mix-blend-overlay" />
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_circle_at_50%_40%,transparent_35%,rgba(0,0,0,0.96)_80%)]" />
+          <div className="pointer-events-none absolute inset-0 noir-scanlines opacity-[0.10] mix-blend-overlay" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_circle_at_50%_45%,transparent_35%,rgba(0,0,0,0.97)_82%)]" />
         </div>
 
         <div className="relative h-full w-full grid place-items-center px-6">
-          <form onSubmit={onSubmitPassword} className="w-full max-w-md">
-            <div className="rounded-[28px] bg-neutral-950/55 ring-1 ring-neutral-800 shadow-[0_18px_70px_rgba(0,0,0,0.75)] overflow-hidden">
-              <div className="relative p-7 sm:p-8">
+          <form onSubmit={onSubmitPassword} className="w-full max-w-2xl">
+            <div className="rounded-[26px] bg-neutral-950/55 ring-1 ring-neutral-800 shadow-[0_18px_70px_rgba(0,0,0,0.75)] overflow-hidden">
+              {/* top bar */}
+              <div className="px-6 sm:px-7 py-4 border-b border-white/5 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-500">
+                    Mileage Mafia Secure Terminal
+                  </div>
+                  <div className="mt-1 text-sm text-neutral-400 truncate">
+                    mm://private-ledger • auth required
+                  </div>
+                </div>
+
+                <div className={clsx("shrink-0 inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] uppercase tracking-[0.22em] ring-1", statusTone)}>
+                  <span className={clsx("h-1.5 w-1.5 rounded-full", dotTone)} />
+                  {statusLabel}
+                </div>
+              </div>
+
+              {/* “terminal” body */}
+              <div className="relative p-6 sm:p-7">
                 <div className="pointer-events-none absolute inset-0 opacity-[0.12] mix-blend-overlay noir-noise" />
                 <div className="pointer-events-none absolute inset-0 opacity-[0.10] noir-scanlines mix-blend-overlay" />
 
-                <div className="relative">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.35em] text-neutral-500">Door Phone</div>
-                      <div
-                        className="mt-2 text-2xl sm:text-3xl font-black tracking-tight"
-                        style={{
-                          textShadow: `0 0 ${12 + glow * 18}px rgba(239,68,68,${0.05 + glow * 0.12})`,
-                        }}
-                      >
-                        State your code.
-                      </div>
-                      <div className="mt-2 text-sm text-neutral-400">No code. No entry.</div>
-                    </div>
-
-                    <div className="shrink-0 text-right">
-                      <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">Line</div>
-                      <div
-                        className={clsx(
-                          "mt-1 inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] uppercase tracking-[0.22em] ring-1",
-                          dialTone === "CALLING"
-                            ? "bg-white/5 ring-white/10 text-neutral-200"
-                            : dialTone === "DENIED"
-                            ? "bg-red-500/10 ring-red-500/20 text-red-200"
-                            : dialTone === "UNLATCHED"
-                            ? "bg-emerald-500/10 ring-emerald-500/20 text-emerald-200"
-                            : "bg-white/5 ring-white/10 text-neutral-400"
-                        )}
-                      >
-                        <span
-                          className={clsx(
-                            "h-1.5 w-1.5 rounded-full",
-                            dialTone === "CALLING"
-                              ? "bg-white/60 mm-dot"
-                              : dialTone === "DENIED"
-                              ? "bg-red-400"
-                              : dialTone === "UNLATCHED"
-                              ? "bg-emerald-400"
-                              : "bg-white/25"
-                          )}
-                        />
-                        {dialTone === "CALLING"
-                          ? "DIALING"
-                          : dialTone === "DENIED"
-                          ? "DENIED"
-                          : dialTone === "UNLATCHED"
-                          ? "UNLATCHED"
-                          : "STANDBY"}
-                      </div>
-                    </div>
+                <div className="relative font-mono">
+                  <div className="text-[12px] sm:text-[13px] leading-relaxed text-neutral-300">
+                    <Line dim>$</Line> <Line>handshake --target mm-ledger</Line>
+                    <Line dim>&gt;</Line>{" "}
+                    <Line>
+                      link: <span className="text-neutral-200">ok</span> • integrity:{" "}
+                      <span className="text-neutral-200">verified</span>
+                    </Line>
+                    <Line dim>&gt;</Line>{" "}
+                    <Line>
+                      clearance:{" "}
+                      <span className={terminalState === "DENIED" ? "text-red-200" : terminalState === "GRANTED" ? "text-emerald-200" : "text-neutral-200"}>
+                        pending
+                      </span>
+                    </Line>
+                    <div className="mt-4 h-px bg-white/5" />
                   </div>
 
-                  <div className="mt-7">
-                    <label className="block text-[10px] uppercase tracking-[0.35em] text-neutral-600">Code</label>
-                    <input
-                      ref={pwRef}
-                      type="password"
-                      value={pw}
-                      onChange={(e) => setPw(e.target.value)}
-                      autoComplete="current-password"
-                      enterKeyHint="go"
-                      placeholder="••••••"
-                      className={clsx(
-                        "mt-2 w-full rounded-2xl bg-black/50 px-4 py-4 text-base tracking-[0.18em]",
-                        "ring-1 outline-none transition",
-                        err ? "ring-red-500/35 focus:ring-red-500/45" : "ring-white/10 focus:ring-red-500/25"
-                      )}
-                    />
+                  <div className="mt-5">
+                    <label className="block text-[10px] uppercase tracking-[0.35em] text-neutral-600 font-sans">
+                      Access key
+                    </label>
 
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <div className="text-xs text-neutral-500">Tap to type • Enter to submit</div>
+                    <div className="mt-2 flex items-center gap-3">
+                      <span className="text-neutral-500 select-none">$</span>
+                      <input
+                        ref={pwRef}
+                        type="password"
+                        value={pw}
+                        onChange={(e) => setPw(e.target.value)}
+                        autoComplete="current-password"
+                        enterKeyHint="go"
+                        placeholder="enter key"
+                        className={clsx(
+                          "flex-1 rounded-2xl bg-black/45 px-4 py-3 text-[14px] tracking-[0.12em]",
+                          "ring-1 outline-none transition",
+                          err ? "ring-red-500/35 focus:ring-red-500/45" : "ring-white/10 focus:ring-red-500/25"
+                        )}
+                      />
+
                       <button
                         type="submit"
                         className={clsx(
-                          "px-4 py-2 rounded-full text-sm font-semibold transition",
+                          "px-4 py-2 rounded-full text-sm font-semibold transition font-sans",
                           "bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10"
                         )}
                       >
-                        Call
+                        Execute ↵
                       </button>
                     </div>
 
-                    {audioBlocked ? (
-                      <div className="mt-4">
+                    <div className="mt-3 flex items-center justify-between gap-3 text-xs text-neutral-500 font-sans">
+                      <span>Enter to submit • Tap anywhere to focus</span>
+
+                      {audioBlocked ? (
                         <button
                           type="button"
-                          onClick={() => void startAmbienceOnFirstGesture()}
-                          className="px-5 py-2.5 rounded-full bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition text-sm"
+                          onClick={tryPlayAmbience}
+                          className="px-3 py-1.5 rounded-full bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition"
                         >
                           Enable Audio
                         </button>
+                      ) : (
+                        <span className="text-neutral-600">ambience: armed</span>
+                      )}
+                    </div>
+
+                    {err ? (
+                      <div className="mt-4 text-red-200 text-[11px] tracking-[0.25em] uppercase font-sans">
+                        {err}
                       </div>
                     ) : null}
 
-                    {err ? <div className="mt-4 text-red-200 text-[11px] tracking-[0.25em] uppercase">{err}</div> : null}
-
-                    {dialTone === "UNLATCHED" ? (
-                      <div className="mt-4 text-emerald-200 text-[11px] tracking-[0.25em] uppercase">Door unlatched.</div>
+                    {terminalState === "GRANTED" ? (
+                      <div className="mt-4 text-emerald-200 text-[11px] tracking-[0.25em] uppercase font-sans">
+                        Clearance granted.
+                      </div>
                     ) : null}
                   </div>
 
+                  {/* hidden submit button keeps mobile Go reliable */}
                   <button type="submit" className="hidden" aria-hidden />
                 </div>
               </div>
 
-              <div className="border-t border-white/5 px-7 py-4">
-                <div className="grid grid-cols-12 gap-1 opacity-60">
-                  {Array.from({ length: 48 }).map((_, i) => (
-                    <span key={i} className="h-[3px] rounded-full bg-white/10" />
-                  ))}
+              {/* footer */}
+              <div className="border-t border-white/5 px-6 sm:px-7 py-4">
+                <div className="text-[11px] text-neutral-500 flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <span className="uppercase tracking-[0.28em]">MM SECURE</span>
+                  <span className="text-neutral-700">•</span>
+                  <span>unauthorized access is logged</span>
                 </div>
               </div>
             </div>
@@ -443,6 +447,12 @@ export default function LoginPage() {
     );
   }
 
+  /**
+   * =========================
+   * CASE FILE DOSSIER → REVIEWING → STAMP INDUCTED
+   * (unchanged)
+   * =========================
+   */
   return (
     <main className="min-h-screen bg-neutral-950 text-white relative overflow-hidden">
       {/* noir bg */}
@@ -457,6 +467,7 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-[radial-gradient(1200px_circle_at_50%_35%,transparent_40%,rgba(0,0,0,0.96)_82%)]" />
       </div>
 
+      {/* REVIEW overlay */}
       {step === "REVIEW" ? (
         <div className="absolute inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/55 backdrop-blur-[2px]" />
@@ -472,13 +483,18 @@ export default function LoginPage() {
 
               <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">
                 Status:{" "}
-                {reviewCleared ? <span className="mm-cleared font-semibold">CLEARED</span> : <span className="text-neutral-500">Reviewing</span>}
+                {reviewCleared ? (
+                  <span className="mm-cleared font-semibold">CLEARED</span>
+                ) : (
+                  <span className="text-neutral-500">Reviewing</span>
+                )}
               </div>
             </div>
           </div>
         </div>
       ) : null}
 
+      {/* GRANTED overlay (STAMP INDUCTED) */}
       {step === "GRANTED" ? (
         <div className="absolute inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-white/10 mm-flash" />
@@ -490,6 +506,7 @@ export default function LoginPage() {
                 <div className="text-3xl md:text-4xl font-black tracking-tight">INDUCTED</div>
                 <div className="mt-3 text-neutral-400 text-sm">Your entry has been recorded.</div>
 
+                {/* stamp stage */}
                 <div className="relative mt-7 h-24 grid place-items-center">
                   <div className="mm-filed">
                     <div className="mm-filed__inner">FILED • MM-2026</div>
@@ -527,7 +544,7 @@ export default function LoginPage() {
                   <div className="mt-4">
                     <button
                       type="button"
-                      onClick={() => void playNoirAtStampOnce()}
+                      onClick={tryPlayMusic}
                       className="px-5 py-2.5 rounded-full bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition text-sm"
                     >
                       Enable Audio
@@ -545,9 +562,11 @@ export default function LoginPage() {
         </div>
       ) : null}
 
+      {/* CASE FILE DOSSIER (OATH) */}
       {step === "OATH" ? (
         <div className="relative max-w-5xl mx-auto px-6 py-16">
           <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6">
+            {/* left dossier tab */}
             <aside className="rounded-3xl bg-neutral-950/55 ring-1 ring-neutral-800 shadow-[0_18px_70px_rgba(0,0,0,0.65)] overflow-hidden">
               <div className="relative p-7">
                 <div className="pointer-events-none absolute inset-0 opacity-[0.12] mix-blend-overlay noir-noise" />
@@ -569,9 +588,7 @@ export default function LoginPage() {
                       <div className="mt-2 text-neutral-300">
                         <div className="flex items-center justify-between text-sm">
                           <span>Articles</span>
-                          <span className="tabular-nums">
-                            {Object.values(checks).filter(Boolean).length}/{RULES.length}
-                          </span>
+                          <span className="tabular-nums">{Object.values(checks).filter(Boolean).length}/{RULES.length}</span>
                         </div>
                         <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
                           <div
@@ -599,11 +616,14 @@ export default function LoginPage() {
                     </button>
                   </div>
 
-                  <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">Tip: Enter to confirm (when ready)</div>
+                  <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">
+                    Tip: Enter to confirm (when ready)
+                  </div>
                 </div>
               </div>
             </aside>
 
+            {/* right dossier body */}
             <section className="rounded-3xl bg-neutral-950/55 ring-1 ring-neutral-800 shadow-[0_18px_70px_rgba(0,0,0,0.75)] overflow-hidden">
               <div className="relative p-8 sm:p-10">
                 <div className="pointer-events-none absolute inset-0 opacity-[0.16] mix-blend-overlay noir-noise" />
@@ -658,6 +678,8 @@ export default function LoginPage() {
                                 )}
                               />
                             </span>
+
+                            {accepted ? <span className="pointer-events-none absolute -inset-2 rounded-full mm-notary" /> : null}
                           </span>
 
                           <div className="min-w-0 flex-1">
@@ -706,9 +728,7 @@ export default function LoginPage() {
                       disabled={!canSwear}
                       className={clsx(
                         "w-full rounded-2xl py-4 font-black tracking-[0.18em] uppercase transition shadow-[0_12px_46px_rgba(0,0,0,0.65)]",
-                        canSwear
-                          ? `bg-red-500 text-black hover:brightness-110 ring-1 ${ACCENT.ringStrong}`
-                          : "bg-white text-black opacity-30 cursor-not-allowed"
+                        canSwear ? `bg-red-500 text-black hover:brightness-110 ring-1 ${ACCENT.ringStrong}` : "bg-white text-black opacity-30 cursor-not-allowed"
                       )}
                     >
                       File Dossier
@@ -726,6 +746,7 @@ export default function LoginPage() {
       ) : null}
 
       <style>{`
+        /* Review scan bar */
         @keyframes mmScan {
           0% { transform: translateX(-60%); opacity: 0.2; }
           20% { opacity: 0.9; }
@@ -733,6 +754,7 @@ export default function LoginPage() {
         }
         .mm-scan { animation: mmScan 900ms ease-in-out infinite; }
 
+        /* Accepted strike */
         .mm-strike { position: relative; display: inline-block; }
         .mm-strike::after {
           content: "";
@@ -747,6 +769,22 @@ export default function LoginPage() {
         }
         @keyframes mmStrike { to { transform: scaleX(1); } }
 
+        /* Notary pulse ring */
+        .mm-notary {
+          position: absolute;
+          inset: -8px;
+          border-radius: 999px;
+          box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.22);
+          animation: mmNotary 320ms ease-out both;
+          pointer-events: none;
+        }
+        @keyframes mmNotary {
+          0% { transform: scale(0.75); opacity: 0; }
+          45% { opacity: 1; }
+          100% { transform: scale(1.2); opacity: 0; }
+        }
+
+        /* Small pill stamp */
         .mm-stamp {
           font-size: 10px;
           letter-spacing: 0.28em;
@@ -764,6 +802,7 @@ export default function LoginPage() {
           100% { opacity: 1; transform: translateY(0) rotate(-6deg) scale(1); }
         }
 
+        /* CLEARED glow */
         .mm-cleared {
           color: rgba(134, 239, 172, 0.92);
           text-shadow: 0 0 0 rgba(34, 197, 94, 0);
@@ -775,6 +814,7 @@ export default function LoginPage() {
           100% { text-shadow: 0 0 22px rgba(34, 197, 94, 0.42); filter: brightness(1.08); }
         }
 
+        /* Stamp Inducted */
         .mm-stamper{
           position: absolute;
           top: -14px;
@@ -836,4 +876,8 @@ export default function LoginPage() {
       `}</style>
     </main>
   );
+}
+
+function Line({ children, dim }: { children: React.ReactNode; dim?: boolean }) {
+  return <span className={dim ? "text-neutral-600" : ""}>{children}</span>;
 }
