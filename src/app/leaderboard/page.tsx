@@ -106,9 +106,9 @@ export default async function LeaderboardPage() {
   // ===== POT LOGIC =====
   const oathPot = totalRunners * 1000;
 
-  // Penalties: Kumaran + Rishi paid ₹500 each
+  // Penalties: Kumar + Rishi paid ₹500 each
   const PENALTIES = [
-    { name: "Kumaran", amount: 500, reason: "Bribery" },
+    { name: "Kumar", amount: 500, reason: "Bribery" },
     { name: "Rishi", amount: 500, reason: "Bribery" },
   ] as const;
 
@@ -134,39 +134,49 @@ export default async function LeaderboardPage() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(900px_circle_at_20%_-10%,rgba(255,255,255,0.08),transparent_60%),radial-gradient(900px_circle_at_90%_0%,rgba(16,185,129,0.10),transparent_55%),radial-gradient(900px_circle_at_60%_110%,rgba(244,63,94,0.10),transparent_55%)]" />
 
       {/* Top Nav */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-neutral-950/70 border-b border-neutral-900">
-        <div
-          className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3"
-          style={{ minHeight: APP_HEADER_H }}
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="h-10 w-10 rounded-2xl bg-white/10 ring-1 ring-white/10 flex items-center justify-center font-black shrink-0">
-              MM
-            </div>
-            <div className="leading-tight min-w-0">
-              <p className="font-black tracking-tight text-base sm:text-lg truncate">
-                Mileage Mafia
-              </p>
-              <p className="text-neutral-400 text-xs">Season 2</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Link
-              href="/challenges"
-              className="px-3 sm:px-4 py-2 rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10 transition text-xs sm:text-sm font-semibold"
-            >
-              Challenges
-            </Link>
-
-            <Chip label="Runners" value={String(totalRunners)} />
-            <PotChip total={totalPot} oathPot={oathPot} penaltyFund={penaltyFund} />
-          </div>
-          <div className="hidden sm:block text-neutral-500 text-xs tabular-nums ml-2">
-  Last Update: 1st Feb • 22:14 IST
-</div>
+<header className="sticky top-0 z-40 backdrop-blur-xl bg-neutral-950/70 border-b border-neutral-900">
+  <div
+    className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 space-y-3"
+    style={{ minHeight: APP_HEADER_H }}
+  >
+    {/* Row 1: Brand + Action */}
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="h-10 w-10 rounded-2xl bg-white/10 ring-1 ring-white/10 flex items-center justify-center font-black shrink-0">
+          MM
         </div>
-      </header>
+
+        <div className="leading-tight min-w-0">
+          <p className="font-black tracking-tight text-base sm:text-lg truncate">
+            Mileage Mafia
+          </p>
+          <p className="text-neutral-400 text-xs">Season 2</p>
+        </div>
+      </div>
+
+      <Link
+        href="/challenges"
+        className="px-4 py-2 rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10 transition text-xs sm:text-sm font-semibold"
+      >
+        Challenges
+      </Link>
+    </div>
+
+    {/* Row 2: Status (Pot + Meta) */}
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      <PotChip
+        total={totalPot}
+        oathPot={oathPot}
+        penaltyFund={penaltyFund}
+      />
+
+      <div className="text-neutral-500 text-xs tabular-nums">
+        {totalRunners} runners • Updated 1 Feb, 22:14 IST
+      </div>
+    </div>
+  </div>
+</header>
+
 
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* HERO ROW (premium + consistent sizing) */}
