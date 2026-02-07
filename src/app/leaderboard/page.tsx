@@ -23,14 +23,12 @@ function initials(name: string) {
   const b = parts.length > 1 ? parts[parts.length - 1][0] : "";
   return (a + b).toUpperCase();
 }
+function fmtINR(n: number) {
+  return `₹${Math.round(n).toLocaleString("en-IN")}`;
+}
 
 /**
- * Level theme tokens:
- * - pill: the label badge
- * - tint: used for avatar chips / light level wash (must work with `ring-1 ${tint}`)
- * - bar: progress bar fill
- *
- * NOTE: Reuse these tokens on runner pages for cards + progress bars.
+ * Level theme tokens
  */
 export const MAFIA_LEVELS = [
   {
@@ -60,18 +58,19 @@ export const MAFIA_LEVELS = [
   {
     minKm: 250,
     name: "Soldier",
-    pill: "bg-slate-700 text-slate-50 ring-1 ring-slate-400/25",
-    tint: "bg-slate-800/20 ring-slate-400/20",
-    bar: "bg-slate-500",
+     pill: "bg-emerald-950 text-emerald-50 ring-1 ring-emerald-700/30",
+    tint: "bg-emerald-950/18 ring-emerald-700/25",
+    bar: "bg-emerald-700",
     desc: "250–499 km",
   },
   {
-    minKm: 0,
-    name: "Associate",
-    pill: "bg-emerald-950 text-emerald-50 ring-1 ring-emerald-700/30",
-    tint: "bg-emerald-950/18 ring-emerald-700/25",
-    bar: "bg-emerald-700",
-    desc: "0–249 km",
+  minKm: 0,
+  name: "Associate",
+  // Gunmetal Grey (clean + minimal)
+  pill: "bg-neutral-700 text-neutral-100 ring-1 ring-neutral-500/30",
+  tint: "bg-neutral-800/40 ring-neutral-500/25",
+  bar: "bg-neutral-500",
+  desc: "0–249 km",
   },
 ] as const;
 
@@ -103,13 +102,13 @@ export default async function LeaderboardPage() {
 
   const totalRunners = rows.length;
 
-  // ===== POT LOGIC =====
+  // ===== POT =====
   const oathPot = totalRunners * 1000;
 
-  // Penalties: Kumar + Rishi paid ₹500 each
+  // Penalties: Kumaran + Rishi paid ₹500 each (Bribery on 2 Feb 2026)
   const PENALTIES = [
-    { name: "Kumar", amount: 500, reason: "Bribery" },
-    { name: "Rishi", amount: 500, reason: "Bribery" },
+    { name: "Kumaran", amount: 500, reason: "Bribery", date: "2 Feb 2026" },
+    { name: "Rishi", amount: 500, reason: "Bribery", date: "2 Feb 2026" },
   ] as const;
 
   const penaltyFund = PENALTIES.reduce((s, p) => s + p.amount, 0);
@@ -125,6 +124,9 @@ export default async function LeaderboardPage() {
   const leader = sorted[0];
   const leaderLvl = leader ? getMafiaLevel(leader.yearlyKm) : null;
 
+  // Manual for now (later: read from Sheets)
+  const LAST_UPDATED = "2 Feb • 22:14 IST";
+
   const APP_HEADER_H = 72; // px
   const LIST_HEADER_H = 56; // px
 
@@ -134,55 +136,52 @@ export default async function LeaderboardPage() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(900px_circle_at_20%_-10%,rgba(255,255,255,0.08),transparent_60%),radial-gradient(900px_circle_at_90%_0%,rgba(16,185,129,0.10),transparent_55%),radial-gradient(900px_circle_at_60%_110%,rgba(244,63,94,0.10),transparent_55%)]" />
 
       {/* Top Nav */}
-<header className="sticky top-0 z-40 backdrop-blur-xl bg-neutral-950/70 border-b border-neutral-900">
-  <div
-    className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 space-y-3"
-    style={{ minHeight: APP_HEADER_H }}
-  >
-    {/* Row 1: Brand + Action */}
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="h-10 w-10 rounded-2xl bg-white/10 ring-1 ring-white/10 flex items-center justify-center font-black shrink-0">
-          MM
+      <header className="sticky top-0 z-40 backdrop-blur-xl bg-neutral-950/70 border-b border-neutral-900">
+        <div
+          className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4"
+          style={{ minHeight: APP_HEADER_H }}
+        >
+          {/* Row 1 */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 rounded-2xl bg-white/10 ring-1 ring-white/10 flex items-center justify-center font-black shrink-0">
+                MM
+              </div>
+              <div className="leading-tight min-w-0">
+                <p className="font-black tracking-tight text-base sm:text-lg truncate">
+                  Mileage Mafia
+                </p>
+                <p className="text-neutral-400 text-xs">Season 2</p>
+              </div>
+            </div>
+
+            {/* Pot + runner count live on the RIGHT (not under logo) */}
+            <div className="flex items-center gap-2 shrink-0">
+              <Chip label="Runners" value={String(totalRunners)} />
+              <Link href="/pot" className="block">
+                <PotChip total={totalPot} oathPot={oathPot} penaltyFund={penaltyFund} />
+              </Link>
+            </div>
+          </div>
+
+          {/* Row 2 (mobile-friendly last updated) */}
+          <div className="mt-2 flex items-center justify-between">
+            <p className="text-neutral-500 text-xs tabular-nums">
+              Last update: <span className="text-neutral-300 font-semibold">{LAST_UPDATED}</span>
+            </p>
+
+            <p className="text-neutral-600 text-xs hidden sm:block">
+              Sheet → Site sync is manual (for now).
+            </p>
+          </div>
         </div>
-
-        <div className="leading-tight min-w-0">
-          <p className="font-black tracking-tight text-base sm:text-lg truncate">
-            Mileage Mafia
-          </p>
-          <p className="text-neutral-400 text-xs">Season 2</p>
-        </div>
-      </div>
-
-      <Link
-        href="/challenges"
-        className="px-4 py-2 rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10 transition text-xs sm:text-sm font-semibold"
-      >
-        Challenges
-      </Link>
-    </div>
-
-    {/* Row 2: Status (Pot + Meta) */}
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-      <PotChip
-        total={totalPot}
-        oathPot={oathPot}
-        penaltyFund={penaltyFund}
-      />
-
-      <div className="text-neutral-500 text-xs tabular-nums">
-        {totalRunners} runners • Updated 1 Feb, 22:14 IST
-      </div>
-    </div>
-  </div>
-</header>
-
+      </header>
 
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        {/* HERO ROW (premium + consistent sizing) */}
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
-          {/* Main hero */}
-          <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-8 shadow-[0_18px_70px_rgba(0,0,0,0.55)]">
+        {/* HERO ROW */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-stretch">
+          {/* Leader */}
+          <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10 h-full">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-5">
               <div className="space-y-2 min-w-0">
                 <p className="text-neutral-400 text-xs uppercase tracking-wider">
@@ -202,7 +201,6 @@ export default async function LeaderboardPage() {
                     </span>
                   ) : null}
 
-                  {/* Leader bonus pill (for #1 runner) */}
                   {leader ? (
                     <span className="px-3 py-1 rounded-full text-[11px] font-extrabold bg-white/5 ring-1 ring-white/10 text-neutral-200">
                       +₹ 1,000
@@ -233,85 +231,25 @@ export default async function LeaderboardPage() {
               ) : null}
             </div>
 
-            {/* Group completion bar (kept tight) */}
-            <div className="mt-6">
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-neutral-300 font-semibold">
-                    Group completion
-                  </p>
-                  <p className="text-neutral-500 text-xs mt-1">
-                    Average completion across the family
-                  </p>
-                </div>
-
-                <p className="text-neutral-400 text-sm">
-                  Avg{" "}
-                  <span className="text-white font-semibold tabular-nums">
-                    {avgCompletion.toFixed(1)}%
-                  </span>
-                </p>
-              </div>
-
-              <div className="mt-3 h-3 bg-neutral-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-white"
-                  style={{
-                    width: `${Math.min(Math.max(avgCompletion, 0), 100)}%`,
-                  }}
-                />
-              </div>
-
-              {/* 3 metrics row + 1 standout house rule block */}
-              <div className="mt-5">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="rounded-2xl bg-neutral-950/50 ring-1 ring-neutral-800 px-5 py-4">
-                    <p className="text-neutral-500 text-xs uppercase tracking-wider">
-                      Total Target KM
-                    </p>
-                    <p className="text-white font-black text-lg mt-2 tabular-nums">
-                      {Math.round(totalTargetKm).toLocaleString("en-IN")} km
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl bg-neutral-950/50 ring-1 ring-neutral-800 px-5 py-4">
-                    <p className="text-neutral-500 text-xs uppercase tracking-wider">
-                      Total KM Logged
-                    </p>
-                    <p className="text-white font-black text-lg mt-2 tabular-nums">
-                      {Math.round(totalKm).toLocaleString("en-IN")} km
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl bg-neutral-950/50 ring-1 ring-neutral-800 px-5 py-4">
-                    <p className="text-neutral-500 text-xs uppercase tracking-wider">
-                      Avg Group Completion
-                    </p>
-                    <p className="text-white font-black text-lg mt-2 tabular-nums">
-                      {avgCompletion.toFixed(1)}%
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4 rounded-3xl bg-gradient-to-br from-red-500/12 via-red-500/6 to-transparent ring-1 ring-red-500/30 px-6 py-6 shadow-[0_0_44px_rgba(239,68,68,0.16)] relative overflow-hidden">
-                  <div className="pointer-events-none absolute inset-0 opacity-[0.25] bg-[radial-gradient(700px_circle_at_18%_30%,rgba(239,68,68,0.25),transparent_60%)]" />
-                  <div className="relative">
-                    <p className="text-neutral-500 text-xs uppercase tracking-[0.3em]">
-                      House Rule
-                    </p>
-                    <p className="mt-3 text-xl sm:text-2xl font-black tracking-tight text-red-200">
-                      Respect the Oath.
-                    </p>
-                  </div>
-                </div>
-              </div>
+            {/* Stats tiles (4 total, premium grid) */}
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <MiniKpi
+                label="Group target"
+                value={`${Math.round(totalTargetKm).toLocaleString("en-IN")} km`}
+              />
+              <MiniKpi
+                label="KM logged"
+                value={`${Math.round(totalKm).toLocaleString("en-IN")} km`}
+              />
+              <MiniKpi label="Avg completion" value={`${avgCompletion.toFixed(1)}%`} />
+              <MiniKpi label="House rule" value="Respect the Code." />
             </div>
           </div>
 
-          {/* Side column */}
-          <div className="space-y-4 sm:space-y-6">
+          {/* Right column: Hierarchy + Challenges */}
+          <div className="space-y-4 sm:space-y-6 h-full">
             {/* Hierarchy */}
-            <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-8 shadow-[0_18px_70px_rgba(0,0,0,0.45)]">
+            <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10">
               <p className="text-neutral-400 text-xs uppercase tracking-wider">
                 Hierarchy
               </p>
@@ -339,9 +277,7 @@ export default async function LeaderboardPage() {
                           >
                             {lvl.name}
                           </span>
-                          <span className="text-neutral-500 text-xs">
-                            {lvl.desc}
-                          </span>
+                          <span className="text-neutral-500 text-xs">{lvl.desc}</span>
                         </div>
                       </div>
 
@@ -358,41 +294,65 @@ export default async function LeaderboardPage() {
               </p>
             </div>
 
-            {/* Contracts */}
+            {/* Challenges (replaces Contracts) */}
             <Link
-              href="/contracts"
-              className="group block rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-8 hover:bg-white/[0.04] transition shadow-[0_18px_70px_rgba(0,0,0,0.55)]"
+              href="/challenges"
+              className="group block rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10 hover:bg-white/[0.04] transition shadow-[0_18px_70px_rgba(0,0,0,0.55)]"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <div className="text-neutral-400 text-xs uppercase tracking-wider">
-                    Paper
+                    Bounties
                   </div>
+
                   <div className="mt-2 flex items-center gap-2 min-w-0">
                     <div className="text-xl font-black tracking-tight truncate">
-                      Contracts
+                      Challenges
                     </div>
-                    <span className="shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold bg-red-500/10 text-red-200 ring-1 ring-red-500/20">
-                      New
+
+                    <span className="shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-500/20">
+                      Live
                     </span>
                   </div>
+
                   <p className="mt-2 text-neutral-500 text-sm leading-relaxed">
-                    Weekly/monthly clauses. Accept them. Every signature hits
-                    the Paper Trail.
+                    Automatic rewards funded by penalty money.
+                  </p>
+
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <div className="rounded-2xl bg-neutral-950/40 ring-1 ring-neutral-800 px-4 py-3">
+                      <p className="text-neutral-500 text-[10px] uppercase tracking-wider">
+                        First Soldier
+                      </p>
+                      <p className="mt-1 font-black tabular-nums">+{fmtINR(400)}</p>
+                      <p className="mt-1 text-neutral-600 text-xs">at 250 km</p>
+                    </div>
+
+                    <div className="rounded-2xl bg-neutral-950/40 ring-1 ring-neutral-800 px-4 py-3">
+                      <p className="text-neutral-500 text-[10px] uppercase tracking-wider">
+                        First Area Don
+                      </p>
+                      <p className="mt-1 font-black tabular-nums">+{fmtINR(600)}</p>
+                      <p className="mt-1 text-neutral-600 text-xs">at 500 km</p>
+                    </div>
+                  </div>
+
+                  <p className="mt-4 text-neutral-600 text-xs">
+                    Penalty pool: <span className="text-neutral-300 font-semibold tabular-nums">{fmtINR(penaltyFund)}</span>{" "}
+                    (Kumaran + Rishi — bribery, 2 Feb 2026)
                   </p>
                 </div>
 
                 <div className="shrink-0 inline-flex items-center gap-2 text-sm font-semibold text-neutral-200 mt-1">
                   Open
-                  <span className="transition-transform group-hover:translate-x-0.5">
-                    →
-                  </span>
+                  <span className="transition-transform group-hover:translate-x-0.5">→</span>
                 </div>
               </div>
             </Link>
           </div>
         </section>
 
+        {/* Leaderboard header */}
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="text-neutral-400 text-xs uppercase tracking-wider">
@@ -467,14 +427,12 @@ export default async function LeaderboardPage() {
                               {lvl.name}
                             </span>
 
-                            {/* Leader reward pill */}
                             {isLeader ? (
                               <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-white/5 ring-1 ring-white/10 text-neutral-200">
                                 +₹ 1,000
                               </span>
                             ) : null}
 
-                            {/* Penalized pill */}
                             {isPenalized ? (
                               <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-red-500/10 text-red-200 ring-1 ring-red-500/20">
                                 -₹ 500
@@ -482,8 +440,7 @@ export default async function LeaderboardPage() {
                             ) : null}
 
                             <div className="text-neutral-400 text-xs tabular-nums">
-                              {Math.round(r.yearlyKm).toLocaleString("en-IN")}{" "}
-                              km{" • "}
+                              {Math.round(r.yearlyKm).toLocaleString("en-IN")} km •{" "}
                               {pct.toFixed(1)}%
                             </div>
                           </div>
@@ -502,9 +459,7 @@ export default async function LeaderboardPage() {
                         </div>
                       </div>
 
-                      <div className="text-neutral-500 text-2xl leading-none">
-                        ›
-                      </div>
+                      <div className="text-neutral-500 text-2xl leading-none">›</div>
                     </div>
                   </div>
 
@@ -526,18 +481,14 @@ export default async function LeaderboardPage() {
                           <div className="min-w-0 w-full">
                             <div className="flex items-center justify-between gap-3">
                               <div className="min-w-0 flex items-center gap-2">
-                                <p className="font-bold text-lg truncate">
-                                  {r.name}
-                                </p>
+                                <p className="font-bold text-lg truncate">{r.name}</p>
 
-                                {/* Leader reward pill */}
                                 {isLeader ? (
                                   <span className="shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold bg-white/5 ring-1 ring-white/10 text-neutral-200">
                                     +₹ 1,000
                                   </span>
                                 ) : null}
 
-                                {/* Penalized pill */}
                                 {isPenalized ? (
                                   <span className="shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold bg-red-500/10 text-red-200 ring-1 ring-red-500/20">
                                     -₹ 500
@@ -606,9 +557,16 @@ function Chip({ label, value }: { label: string; value: string }) {
   return (
     <div className="px-3 sm:px-4 py-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 text-neutral-300 text-xs sm:text-sm">
       <span className="text-neutral-500">{label}</span>
-      <span className="text-white font-semibold ml-2 tabular-nums">
-        {value}
-      </span>
+      <span className="text-white font-semibold ml-2 tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+function MiniKpi({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-neutral-950/40 ring-1 ring-neutral-800 px-4 sm:px-5 py-3 sm:py-4">
+      <p className="text-neutral-500 text-xs uppercase tracking-wider">{label}</p>
+      <p className="text-white font-bold mt-2">{value}</p>
     </div>
   );
 }
