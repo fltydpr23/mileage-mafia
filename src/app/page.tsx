@@ -35,6 +35,9 @@ export default function LoginPage() {
   const [showTitle, setShowTitle] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
 
+  // Forgot password hint
+  const [showHint, setShowHint] = useState(false);
+
   // Audio
   const [audioBlocked, setAudioBlocked] = useState(false);
 
@@ -47,12 +50,12 @@ export default function LoginPage() {
   const grantedFiredRef = useRef(false);
   const lastStampAtRef = useRef(0);
 
-  // ====== NEW: one-shot audio bootstrap + timing control ======
+  // ===== audio bootstrap + timing control =====
   const bootedRef = useRef(false);
   const ambienceStartedRef = useRef(false);
   const stopAmbienceBeforeStampRef = useRef(false);
 
-  // used to cancel pending timers when leaving LOCK etc
+  // cancel pending timers
   const lockTimersRef = useRef<number[]>([]);
   const clearLockTimers = useCallback(() => {
     lockTimersRef.current.forEach((id) => window.clearTimeout(id));
@@ -108,7 +111,7 @@ export default function LoginPage() {
   }, []);
 
   // -------------------
-  // Audio helpers (robust)
+  // Audio helpers
   // -------------------
   const startAmbience = useCallback(async () => {
     setAudioBlocked(false);
@@ -133,32 +136,26 @@ export default function LoginPage() {
   }, [audio]);
 
   const bootAudioFromGesture = useCallback(async () => {
-    // Must run from a real user gesture (pointer/key/focus)
+    // must be called from a real user gesture
     if (bootedRef.current) return;
     bootedRef.current = true;
 
     setAudioBlocked(false);
 
     try {
-      // unlock both WebAudio + HTMLAudioElement
       await (audio as any)?.unlock?.();
-
-      // preload SFX so stamp NEVER misses
       await (audio as any)?.preloadSfx?.();
 
-      // do NOT start ambience immediately: requirement = "a few seconds after pw page"
-      // schedule it AFTER gesture (so it won't be blocked)
+      // requirement: ambience starts a few seconds AFTER pw page (but scheduled from gesture)
       if (step === "LOCK") {
         const id = window.setTimeout(() => {
-          // don't start if we've already moved past LOCK or if we plan to stop before stamp
           if (step !== "LOCK") return;
           if (stopAmbienceBeforeStampRef.current) return;
           void startAmbience();
-        }, 2200); // "a few seconds" (tweak: 1800–2800)
+        }, 2200);
         lockTimersRef.current.push(id);
       }
     } catch {
-      // allow retry next gesture
       bootedRef.current = false;
       setAudioBlocked(true);
     }
@@ -169,6 +166,8 @@ export default function LoginPage() {
     if (step !== "LOCK") return;
 
     clearLockTimers();
+    setShowHint(false);
+
     setShowTitle(false);
     setShowPrompt(false);
 
@@ -185,11 +184,9 @@ export default function LoginPage() {
     };
   }, [step, clearLockTimers]);
 
-  // Important: if we leave LOCK, cancel any pending "start ambience in a few seconds"
+  // leaving LOCK cancels pending timers
   useEffect(() => {
-    if (step !== "LOCK") {
-      clearLockTimers();
-    }
+    if (step !== "LOCK") clearLockTimers();
   }, [step, clearLockTimers]);
 
   // -------------------
@@ -201,7 +198,6 @@ export default function LoginPage() {
       if (step !== "LOCK") return;
       if (submitting) return;
 
-      // Ensure boot attempt happens on submit too (mobile "Go")
       void bootAudioFromGesture();
 
       if (!pw.trim()) {
@@ -229,7 +225,6 @@ export default function LoginPage() {
           return;
         }
 
-        // Reset induction guard for this run-through
         grantedFiredRef.current = false;
         lastStampAtRef.current = 0;
 
@@ -251,10 +246,8 @@ export default function LoginPage() {
   }, [canSwear, step]);
 
   const resetBackToLock = useCallback(() => {
-    // Stop whatever is playing
     stopMainTrack();
 
-    // Reset flags
     ambienceStartedRef.current = false;
     stopAmbienceBeforeStampRef.current = false;
     bootedRef.current = false;
@@ -266,6 +259,7 @@ export default function LoginPage() {
     setChecks(initialChecks);
     setSig("");
     setReviewCleared(false);
+    setShowHint(false);
 
     grantedFiredRef.current = false;
     lastStampAtRef.current = 0;
@@ -286,25 +280,21 @@ export default function LoginPage() {
     };
   }, [step]);
 
-  // ✅ GRANTED: stop ambience -> stamp -> noir immediately after
+  // GRANTED: stop ambience -> stamp -> noir immediately after
   useEffect(() => {
     if (step !== "GRANTED") return;
 
     if (grantedFiredRef.current) return;
     grantedFiredRef.current = true;
 
-    // Requirement:
-    // ambience continues UNTIL stamp is heard → so stop ambience right before stamp hit
-    // then noir starts immediately after stamp
     const t = window.setTimeout(async () => {
-      // stop ambience right before stamp
       stopAmbienceBeforeStampRef.current = true;
+
       if (ambienceStartedRef.current) {
-        stopMainTrack(); // kills ambience (shared audio element)
+        stopMainTrack();
         ambienceStartedRef.current = false;
       }
 
-      // Play stamp (preloaded at boot; should not miss)
       const now = Date.now();
       if (now - lastStampAtRef.current > 900) {
         lastStampAtRef.current = now;
@@ -313,9 +303,6 @@ export default function LoginPage() {
         } catch {}
       }
 
-      // Noir IMMEDIATELY after stamp
-      // (stamp is an SFX buffer; noir is the HTMLAudioElement. They can overlap a hair,
-      // but this starts noir right after the stamp trigger.)
       try {
         await startNoir();
       } catch {}
@@ -330,7 +317,6 @@ export default function LoginPage() {
       if (step === "REVIEW") return;
 
       if (step === "LOCK") {
-        // first key should also boot audio (gesture-based)
         void bootAudioFromGesture();
 
         if (e.key === "Escape") {
@@ -370,16 +356,16 @@ export default function LoginPage() {
     return (
       <main
         className="fixed inset-0 bg-black text-white overflow-hidden"
-        // ✅ any real gesture boots audio (unlock + preload + schedule ambience)
         onPointerDown={() => void bootAudioFromGesture()}
         onTouchStart={() => void bootAudioFromGesture()}
         onKeyDownCapture={() => void bootAudioFromGesture()}
       >
-        {/* mild CRT/static layers */}
+        {/* TV static layers (FIXED: includes grain + animated scan shimmer) */}
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute inset-0 mm-static opacity-[0.10] mix-blend-overlay" />
-          <div className="absolute inset-0 mm-scanlines opacity-[0.08] mix-blend-overlay" />
-          <div className="absolute inset-0 bg-[radial-gradient(1100px_circle_at_50%_40%,rgba(255,255,255,0.05),transparent_60%),radial-gradient(900px_circle_at_50%_100%,rgba(0,0,0,0.9),transparent_60%)]" />
+          <div className="absolute inset-0 mm-static opacity-[0.14] mix-blend-overlay" />
+          <div className="absolute inset-0 mm-scanlines opacity-[0.10] mix-blend-overlay" />
+          <div className="absolute inset-0 mm-vhs opacity-[0.10] mix-blend-overlay" />
+          <div className="absolute inset-0 bg-[radial-gradient(1100px_circle_at_50%_40%,rgba(255,255,255,0.045),transparent_60%),radial-gradient(900px_circle_at_50%_100%,rgba(0,0,0,0.92),transparent_60%)]" />
           <div className="absolute inset-0 bg-[radial-gradient(1200px_circle_at_50%_35%,transparent_45%,rgba(0,0,0,0.96)_82%)]" />
         </div>
 
@@ -389,18 +375,27 @@ export default function LoginPage() {
               <div
                 className={clsx(
                   "select-none",
-                  "font-black uppercase tracking-[0.42em]",
-                  "text-[13px] sm:text-[14px]",
+                  "text-center",
+                  "text-[11px] sm:text-[12px]",
+                  "text-neutral-200",
+                  "leading-none",
                   "transition-opacity duration-[1200ms] ease-out",
                   showTitle ? "opacity-100" : "opacity-0"
                 )}
+                style={{
+                  fontFamily:
+                    "Helvetica Neue, Helvetica, Arial, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  whiteSpace: "nowrap",
+                }}
               >
-                Mileage Mafia
+                mileage mafia
               </div>
 
               <div className="mt-10 flex items-center justify-center gap-2 font-mono text-[14px] sm:text-[15px] text-neutral-200">
                 <span className={clsx("transition-opacity duration-500", showPrompt ? "opacity-100" : "opacity-0")}>
-                  &gt;
+                  {">"}
                 </span>
 
                 <input
@@ -423,11 +418,38 @@ export default function LoginPage() {
                   )}
                   style={{ opacity: showPrompt ? 1 : 0, transition: "opacity 500ms ease" }}
                 />
-
-                <span className={clsx("mm-cursor", errFlash ? "text-red-300" : "text-neutral-200")}>▍</span>
               </div>
 
-              <div className="mt-10 h-5 text-[10px] uppercase tracking-[0.35em] text-neutral-700">
+              {/* ✅ forgot password directly under field */}
+              <div className={clsx("mt-3 text-[10px] tracking-[0.18em] text-neutral-600", showPrompt ? "opacity-100" : "opacity-0")} style={{ transition: "opacity 500ms ease" }}>
+                {!showHint ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowHint(true)}
+                    className="underline underline-offset-4 hover:text-neutral-400 transition"
+                    style={{
+                      fontFamily:
+                        "Helvetica Neue, Helvetica, Arial, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    forgot your password?
+                  </button>
+                ) : (
+                  <span
+                    className="text-neutral-400"
+                    style={{
+                      fontFamily:
+                        "Helvetica Neue, Helvetica, Arial, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    respect all.
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-8 h-5 text-[10px] uppercase tracking-[0.35em] text-neutral-700">
                 {audioBlocked ? "tap or type once to enable audio" : "\u00A0"}
               </div>
 
@@ -437,38 +459,50 @@ export default function LoginPage() {
         </div>
 
         <style>{`
-          /* ===== LOCK CRT/static ===== */
+          /* ===== LOCK static (more visible + animated) ===== */
           .mm-static{
             background-image:
-              url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
-            background-size: 260px 260px;
-            animation: mmNoiseDrift 6s linear infinite;
+              url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.95' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.65'/%3E%3C/svg%3E");
+            background-size: 240px 240px;
+            animation: mmNoiseDrift 2.4s steps(2,end) infinite;
           }
           @keyframes mmNoiseDrift{
-            0%{ transform: translate3d(0,0,0); }
-            50%{ transform: translate3d(-10px,6px,0); }
-            100%{ transform: translate3d(0,0,0); }
+            0%{ transform: translate3d(0,0,0); opacity: .95; }
+            25%{ transform: translate3d(-8px,5px,0); opacity: .75; }
+            50%{ transform: translate3d(10px,-6px,0); opacity: .9; }
+            75%{ transform: translate3d(-6px,-4px,0); opacity: .8; }
+            100%{ transform: translate3d(0,0,0); opacity: .95; }
           }
+
           .mm-scanlines{
             background: repeating-linear-gradient(
               to bottom,
-              rgba(255,255,255,0.07),
-              rgba(255,255,255,0.07) 1px,
+              rgba(255,255,255,0.08),
+              rgba(255,255,255,0.08) 1px,
               transparent 1px,
               transparent 4px
             );
           }
 
-          /* cursor + shake */
-          .mm-cursor{
-            display:inline-block;
-            opacity: 0.75;
-            animation: mmBlink 900ms steps(1,end) infinite;
+          /* subtle moving horizontal band */
+          .mm-vhs{
+            background: linear-gradient(
+              to bottom,
+              transparent 0%,
+              rgba(255,255,255,0.05) 48%,
+              rgba(255,255,255,0.05) 52%,
+              transparent 100%
+            );
+            transform: translateY(-60%);
+            animation: mmVhsSweep 4.2s linear infinite;
           }
-          @keyframes mmBlink{
-            0%,49%{ opacity: .12; }
-            50%,100%{ opacity: .85; }
+          @keyframes mmVhsSweep{
+            0%{ transform: translateY(-60%); opacity: .05; }
+            30%{ opacity: .10; }
+            100%{ transform: translateY(160%); opacity: .06; }
           }
+
+          /* shake */
           .mm-shake{
             animation: mmShake 220ms ease-in-out 0s 2;
           }
@@ -559,7 +593,7 @@ export default function LoginPage() {
                       `ring-1 ${ACCENT.ring}`,
                     ].join(" ")}
                   >
-                    View the Ledger →
+                    View the Ledger {"\u2192"}
                   </button>
 
                   <button
@@ -772,11 +806,13 @@ export default function LoginPage() {
       <style>{`
         /* noir bg */
         .noir-crt{ filter: saturate(0.98) contrast(1.06); }
+
         .noir-noise{
           background-image:
             url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
           background-size: 220px 220px;
         }
+
         .noir-scanlines{
           background: repeating-linear-gradient(
             to bottom,
@@ -786,6 +822,7 @@ export default function LoginPage() {
             transparent 4px
           );
         }
+
         .mm-jitter{ animation: mmJitter 3.2s steps(1,end) infinite; }
         @keyframes mmJitter{
           0%,100%{ transform: translate(0,0); }
@@ -795,11 +832,13 @@ export default function LoginPage() {
           95%{ transform: translate(0,1px); }
           96%{ transform: translate(0,-1px); }
         }
+
         .mm-drift{ animation: mmDrift 9s ease-in-out infinite; }
         @keyframes mmDrift{
           0%,100%{ transform: translate3d(0,0,0); }
           50%{ transform: translate3d(8px,-6px,0); }
         }
+
         .mm-flash{ animation: mmFlash 240ms ease-out both; }
         @keyframes mmFlash{
           0%{ opacity: 0; }
@@ -807,7 +846,7 @@ export default function LoginPage() {
           100%{ opacity: 0; }
         }
 
-        /* stamper + filed */
+        /* stamper + filed (restored) */
         .mm-stamper{
           position: absolute;
           top: -14px;
