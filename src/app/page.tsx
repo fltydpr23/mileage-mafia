@@ -83,7 +83,7 @@ export default function LoginPage() {
         text: "The first member to reach 100% of their annual target will receive a ₹1000 leader bonus, funded equally by the remaining members.",
       },
       { id: "noexcuses", text: "Conditions, injuries, devices, or circumstances do not alter the terms. Only completed distance is recognized." },
-      { id: "respect", text: "Disorder, manipulation, or disrespect will be met with penalties at the discretion of the family." },
+      { id: "respect", text: "Disorder, manipulation, or disrespect will be met with penalties at the discretion of the mafia." },
       { id: "strava", text: "If the activity is not logged on Strava, it doesn't count." },
       { id: "closing", text: "I accept these terms willingly. I enter the Mileage Mafia by choice, and remain by discipline." },
     ],
