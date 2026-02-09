@@ -37,10 +37,12 @@ type SfxOptions = {
   detune?: number; // cents
   randomRate?: [number, number];
   randomDetune?: [number, number];
+  // Optional: if caller passes this, we can hard-stop any existing SFX voice
+  // (we implement this with a tiny “voice pool” below)
+  interrupt?: boolean;
 };
 
 type AudioApi = {
-  // ===== Current track / playback =====
   playing: boolean;
   current: Track; // ALWAYS defined (safe defaults)
   currentTime: number;
@@ -50,24 +52,20 @@ type AudioApi = {
   setVolume: (v: number) => void;
   seek: (sec: number) => void;
 
-  // ===== Music controls =====
-  play: () => Promise<void>; // backward-compatible alias -> playMusic()
+  play: () => Promise<void>; // alias -> playMusic()
   pause: () => void;
   stop: () => void;
   next: () => void;
   prev: () => void;
   toggle: () => void;
 
-  // ===== Mode controls =====
   playAmbience: () => Promise<void>;
   playMusic: (startIndex?: number) => Promise<void>;
   mode: "ambience" | "music";
 
-  // ===== iOS unlock / autoplay =====
   unlock: () => Promise<void>;
   unlocked: boolean;
 
-  // ===== SFX =====
   sfx: (name: SfxName, opts?: SfxOptions) => void;
   preloadSfx: () => Promise<void>;
   sfxMuted: boolean;
@@ -90,9 +88,9 @@ function randRange([a, b]: [number, number]) {
 // ===== FILE PATHS =====
 const AMBIENCE_TRACK: Track = {
   id: "ambience",
-  title: "Door Phone Ambience",
+  title: "Running Ambience",
   artist: "Mileage Mafia",
-  src: "/audio/mm-ambience.mp3",
+  src: "/audio/footsteps.mp3",
   loop: true,
 };
 
@@ -127,6 +125,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // One HTMLAudioElement for playback (ambience OR music)
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // IMPORTANT: guards async “mode switching” so the latest call wins
+  const opIdRef = useRef(0);
+
   // mode + indices
   const [mode, setMode] = useState<"ambience" | "music">("ambience");
   const [musicIndex, setMusicIndex] = useState(0);
@@ -144,6 +145,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const sfxGainRef = useRef<GainNode | null>(null);
   const buffersRef = useRef<Partial<Record<SfxName, AudioBuffer>>>({});
   const preloadPromiseRef = useRef<Promise<void> | null>(null);
+
+  // Small “voice pool” for SFX to support interrupt (prevents stamp glitches)
+  const activeSfxRefs = useRef<AudioBufferSourceNode[]>([]);
 
   const [unlocked, setUnlocked] = useState(false);
 
@@ -178,7 +182,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     a.preload = "auto";
     a.loop = true;
     a.volume = clamp01(volume);
-    // If you ever serve audio from a CDN, this helps WebAudio / CORS
     a.crossOrigin = "anonymous";
 
     audioRef.current = a;
@@ -196,7 +199,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     a.addEventListener("durationchange", onMeta);
     a.addEventListener("ended", onEnded);
 
-    // Start with ambience metadata so NowPlaying never explodes
     setCurrent(AMBIENCE_TRACK);
 
     return () => {
@@ -221,9 +223,24 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     a.volume = clamp01(volume);
   }, [volume]);
 
-  const loadTrack = useCallback(async (t: Track) => {
+  // ---- core: guarded track load + play (latest op wins) ----
+  const hardStopElement = useCallback(() => {
     const a = audioRef.current;
     if (!a) return;
+    try {
+      a.pause();
+      a.currentTime = 0;
+    } catch {}
+    setPlaying(false);
+    setCurrentTime(0);
+  }, []);
+
+  const loadTrackGuarded = useCallback(async (t: Track, opId: number) => {
+    const a = audioRef.current;
+    if (!a) return;
+
+    // If superseded, abort
+    if (opId !== opIdRef.current) return;
 
     // If no src, stop
     if (!t.src) {
@@ -239,33 +256,39 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // pause + swap src
     try {
       a.pause();
     } catch {}
+
+    if (opId !== opIdRef.current) return;
 
     a.src = t.src;
     a.loop = t.loop !== false;
     a.currentTime = 0;
 
-    // IMPORTANT: force load so metadata/duration updates reliably
     try {
       a.load();
     } catch {}
+
+    if (opId !== opIdRef.current) return;
 
     setCurrent(t);
     setCurrentTime(0);
     setDuration(0);
   }, []);
 
-  const doPlay = useCallback(async () => {
+  const doPlayGuarded = useCallback(async (opId: number) => {
     const a = audioRef.current;
     if (!a) return;
     if (!a.src) return;
 
+    if (opId !== opIdRef.current) return;
+
     try {
       await a.play();
     } catch {
-      // Autoplay blocked; caller should show “Enable Audio”
+      // Autoplay blocked
       throw new Error("Audio blocked");
     }
   }, []);
@@ -277,14 +300,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const stop = useCallback(() => {
-    const a = audioRef.current;
-    if (!a) return;
-    try {
-      a.pause();
-      a.currentTime = 0;
-    } catch {}
-    setCurrentTime(0);
-  }, []);
+    // Invalidate any in-flight async ops
+    opIdRef.current += 1;
+    hardStopElement();
+  }, [hardStopElement]);
 
   const seek = useCallback((sec: number) => {
     const a = audioRef.current;
@@ -301,18 +320,26 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setVolumeState(clamp01(v));
   }, []);
 
-  // ===== Mode APIs =====
+  // ===== Mode APIs (GUARDED) =====
   const playAmbience = useCallback(async () => {
+    const opId = ++opIdRef.current;
+
     setMode("ambience");
-    await loadTrack(AMBIENCE_TRACK);
-    await doPlay();
-  }, [loadTrack, doPlay]);
+    // stop immediately so old audio doesn't keep running in background
+    hardStopElement();
+
+    await loadTrackGuarded(AMBIENCE_TRACK, opId);
+    await doPlayGuarded(opId);
+  }, [hardStopElement, loadTrackGuarded, doPlayGuarded]);
 
   const playMusic = useCallback(
     async (startIndex?: number) => {
       if (MUSIC_PLAYLIST.length === 0) return;
 
+      const opId = ++opIdRef.current;
+
       setMode("music");
+      hardStopElement();
 
       const idx =
         typeof startIndex === "number"
@@ -320,15 +347,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           : ((musicIndex % MUSIC_PLAYLIST.length) + MUSIC_PLAYLIST.length) % MUSIC_PLAYLIST.length;
 
       setMusicIndex(idx);
-      await loadTrack(MUSIC_PLAYLIST[idx]);
-      await doPlay();
+
+      await loadTrackGuarded(MUSIC_PLAYLIST[idx], opId);
+      await doPlayGuarded(opId);
     },
-    [loadTrack, doPlay, musicIndex]
+    [hardStopElement, loadTrackGuarded, doPlayGuarded, musicIndex]
   );
 
-  // Backward-compatible alias (used earlier in LoginPage)
+  // Backward-compatible alias
   const play = useCallback(async () => {
-    // “Play” means play MUSIC (Noir) by default.
     await playMusic();
   }, [playMusic]);
 
@@ -341,13 +368,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
 
     const nextIdx = (musicIndex + 1) % MUSIC_PLAYLIST.length;
-    setMusicIndex(nextIdx);
-
-    void (async () => {
-      await loadTrack(MUSIC_PLAYLIST[nextIdx]);
-      await doPlay();
-    })();
-  }, [mode, musicIndex, loadTrack, doPlay, playMusic]);
+    void playMusic(nextIdx);
+  }, [mode, musicIndex, playMusic]);
 
   const prev = useCallback(() => {
     if (MUSIC_PLAYLIST.length === 0) return;
@@ -358,25 +380,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
 
     const prevIdx = (musicIndex - 1 + MUSIC_PLAYLIST.length) % MUSIC_PLAYLIST.length;
-    setMusicIndex(prevIdx);
-
-    void (async () => {
-      await loadTrack(MUSIC_PLAYLIST[prevIdx]);
-      await doPlay();
-    })();
-  }, [mode, musicIndex, loadTrack, doPlay, playMusic]);
+    void playMusic(prevIdx);
+  }, [mode, musicIndex, playMusic]);
 
   const toggle = useCallback(() => {
     if (playing) {
       pause();
     } else {
-      void doPlay();
+      // replay current (guarded)
+      const opId = ++opIdRef.current;
+      void doPlayGuarded(opId).catch(() => {});
     }
-  }, [playing, pause, doPlay]);
+  }, [playing, pause, doPlayGuarded]);
 
-  // ===== iOS unlock for BOTH:
-  // 1) WebAudio (SFX)
-  // 2) HTMLAudioElement (ambience/noir)
+  // ===== iOS unlock for BOTH WebAudio + HTMLAudioElement =====
   const ensureCtx = useCallback(async () => {
     if (ctxRef.current && masterGainRef.current && sfxGainRef.current) return;
 
@@ -399,10 +416,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }, [sfxMuted]);
 
   const unlock = useCallback(async () => {
-    // NOTE: This MUST be called from a user gesture (click/touch/keydown)
     await ensureCtx();
 
-    // Resume WebAudio
     const ctx = ctxRef.current;
     if (ctx && ctx.state !== "running") {
       try {
@@ -410,7 +425,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     }
 
-    // Prime Safari WebAudio with silent buffer
+    // prime WebAudio
     try {
       const c = ctxRef.current;
       const g = sfxGainRef.current;
@@ -423,15 +438,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       }
     } catch {}
 
-    // Prime/Unlock the HTMLAudioElement too (this is what fixes
-    // “ambience/noir only starts later on leaderboard” on iOS/Safari)
+    // prime HTMLAudioElement
     const a = audioRef.current;
     if (a) {
       const prevVol = a.volume;
       const prevSrc = a.src;
 
       try {
-        // Ensure there's a valid src to satisfy Safari
         if (!a.src) {
           a.src = AMBIENCE_TRACK.src;
           a.loop = true;
@@ -442,16 +455,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         }
 
         a.volume = 0;
-        // play/pause inside gesture unlocks later programmatic plays
         await a.play();
         a.pause();
         a.currentTime = 0;
       } catch {
-        // If this fails, it's still fine—caller can show Enable Audio.
       } finally {
         try {
           a.volume = prevVol;
-          // Restore src if we temporarily set it
           if (prevSrc && prevSrc !== a.src) {
             a.src = prevSrc;
             try {
@@ -507,7 +517,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
       const buf = buffersRef.current[name];
       if (!buf) {
-        // lazy-load single
         void (async () => {
           try {
             const b = await fetchBuffer(SFX_MAP[name]);
@@ -515,6 +524,18 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           } catch {}
         })();
         return;
+      }
+
+      // Interrupt mode: stop active voices (helps stamp “glitch”)
+      if (opts?.interrupt) {
+        try {
+          activeSfxRefs.current.forEach((n) => {
+            try {
+              n.stop(0);
+            } catch {}
+          });
+        } catch {}
+        activeSfxRefs.current = [];
       }
 
       const src = ctx.createBufferSource();
@@ -532,6 +553,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       g.gain.value = vol;
       src.connect(g);
       g.connect(out);
+
+      activeSfxRefs.current.push(src);
+      src.onended = () => {
+        activeSfxRefs.current = activeSfxRefs.current.filter((x) => x !== src);
+      };
 
       try {
         src.start(0);
@@ -551,6 +577,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       sfxGainRef.current = null;
       buffersRef.current = {};
       preloadPromiseRef.current = null;
+      activeSfxRefs.current = [];
     };
   }, []);
 

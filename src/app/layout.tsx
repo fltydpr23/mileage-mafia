@@ -5,6 +5,7 @@ import "./globals.css";
 import AuthGate from "@/components/AuthGate";
 import { AudioProvider } from "@/components/AudioProvider";
 import Link from "next/link";
+import NowPlaying from "@/components/NowPlaying";
 
 const geistSans = Geist({
   subsets: ["latin"],

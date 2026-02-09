@@ -44,7 +44,7 @@ export default function NowPlaying() {
         >
           <div className="min-w-0">
             <p className="text-xs uppercase tracking-wider text-neutral-500">
-              Now Playing
+              Now Playing • MM Radio
             </p>
             <p className="text-sm font-semibold truncate">
               {track.title}
@@ -107,7 +107,7 @@ export default function NowPlaying() {
       <div className="rounded-3xl bg-neutral-950/70 backdrop-blur-2xl ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.6)] p-5 space-y-4">
         <div>
           <p className="text-[11px] uppercase tracking-[0.25em] text-neutral-500">
-            Now Playing
+            Now Playing • MM Radio
           </p>
           <p className="mt-1 font-semibold text-white truncate">
             {track.title}

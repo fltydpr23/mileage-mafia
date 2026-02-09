@@ -98,58 +98,59 @@ function parseSheetDate(v: any): Date | null {
 }
 
 /**
- * Mafia-themed palette + full theme per level.
+ * Mafia-themed palette (MATCH leaderboard page)
+ * NOTE: We keep the same keys your page already uses: badge/cardBg/cardRing/accentBar/accentText/ringColor
  */
 const MAFIA_LEVELS = [
   {
-    minKm: 1500,
-    name: "Don",
-    badge: "bg-amber-300 text-black shadow-lg shadow-amber-300/20",
-    cardBg: "bg-amber-500/10",
-    cardRing: "ring-amber-300/30",
-    accentBar: "bg-amber-300",
-    accentText: "text-amber-200",
-    ringColor: "#fcd34d",
+    minKm: 1800,
+    name: "Godfather",
+    badge: "bg-red-900 text-red-50 ring-1 ring-red-700/40",
+    cardBg: "bg-red-900/15",
+    cardRing: "ring-red-700/35",
+    accentBar: "bg-red-800",
+    accentText: "text-red-200",
+    ringColor: "#fecaca",
   },
   {
     minKm: 1000,
     name: "Underboss",
-    badge: "bg-rose-300 text-black shadow-lg shadow-rose-300/20",
-    cardBg: "bg-rose-500/10",
-    cardRing: "ring-rose-300/30",
-    accentBar: "bg-rose-300",
+    badge: "bg-rose-950 text-rose-50 ring-1 ring-rose-700/35",
+    cardBg: "bg-rose-950/15",
+    cardRing: "ring-rose-700/30",
+    accentBar: "bg-rose-800",
     accentText: "text-rose-200",
-    ringColor: "#fda4af",
+    ringColor: "#fecdd3",
   },
   {
     minKm: 500,
     name: "Area Don",
-    badge: "bg-emerald-300 text-black shadow-lg shadow-emerald-300/20",
-    cardBg: "bg-emerald-500/10",
-    cardRing: "ring-emerald-300/30",
-    accentBar: "bg-emerald-300",
-    accentText: "text-emerald-200",
-    ringColor: "#6ee7b7",
+    badge: "bg-amber-900 text-amber-50 ring-1 ring-amber-700/35",
+    cardBg: "bg-amber-900/15",
+    cardRing: "ring-amber-700/30",
+    accentBar: "bg-amber-700",
+    accentText: "text-amber-200",
+    ringColor: "#fde68a",
   },
   {
     minKm: 250,
     name: "Soldier",
-    badge: "bg-sky-300 text-black shadow-lg shadow-sky-300/20",
-    cardBg: "bg-sky-500/10",
-    cardRing: "ring-sky-300/30",
-    accentBar: "bg-sky-300",
-    accentText: "text-sky-200",
-    ringColor: "#7dd3fc",
+    badge: "bg-emerald-950 text-emerald-50 ring-1 ring-emerald-700/30",
+    cardBg: "bg-emerald-950/18",
+    cardRing: "ring-emerald-700/25",
+    accentBar: "bg-emerald-700",
+    accentText: "text-emerald-200",
+    ringColor: "#a7f3d0",
   },
   {
     minKm: 0,
     name: "Associate",
-    badge: "bg-zinc-300 text-black shadow-lg shadow-zinc-300/10",
-    cardBg: "bg-zinc-500/10",
-    cardRing: "ring-zinc-300/25",
-    accentBar: "bg-zinc-300",
-    accentText: "text-zinc-200",
-    ringColor: "#d4d4d8",
+    badge: "bg-neutral-700 text-neutral-100 ring-1 ring-neutral-500/30",
+    cardBg: "bg-neutral-800/40",
+    cardRing: "ring-neutral-500/25",
+    accentBar: "bg-neutral-500",
+    accentText: "text-neutral-200",
+    ringColor: "#e5e7eb",
   },
 ] as const;
 
@@ -173,6 +174,7 @@ function getTierProgress(km: number) {
 
   return { current, next, pct, kmToNext, curMin, nextMin };
 }
+
 type AcceptedContract = {
   contractId: string;
   title: string;
@@ -197,7 +199,6 @@ function fmtAcceptedTs(ts: string) {
     minute: "2-digit",
   });
 }
-
 
 export default async function RunnerPage({ params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
@@ -245,59 +246,57 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
   }
 
   // ===== CONTRACTS (Accepted) =====
-// Sheet: API_ContractLog
-// A ts | B runner | C action | D contractId | E title | F period | G meta
-const logRaw = await getSheet("API_ContractLog!A2:G5000");
+  // Sheet: API_ContractLog
+  // A ts | B runner | C action | D contractId | E title | F period | G meta
+  const logRaw = await getSheet("API_ContractLog!A2:G5000");
 
-const acceptedAll = (logRaw ?? [])
-  .map((r: any[]) => ({
-    ts: String(r?.[0] ?? "").trim(),
-    runner: String(r?.[1] ?? "").trim(),
-    action: String(r?.[2] ?? "").trim().toUpperCase(),
-    contractId: String(r?.[3] ?? "").trim(),
-    title: String(r?.[4] ?? "").trim(),
-    period: String(r?.[5] ?? "").trim(),
-    meta: String(r?.[6] ?? "").trim(),
-  }))
-  .filter((x) => norm(x.runner) === routeName)
-  .filter((x) => x.action === "ACCEPTED")
-  .filter((x) => x.contractId);
+  const acceptedAll = (logRaw ?? [])
+    .map((r: any[]) => ({
+      ts: String(r?.[0] ?? "").trim(),
+      runner: String(r?.[1] ?? "").trim(),
+      action: String(r?.[2] ?? "").trim().toUpperCase(),
+      contractId: String(r?.[3] ?? "").trim(),
+      title: String(r?.[4] ?? "").trim(),
+      period: String(r?.[5] ?? "").trim(),
+      meta: String(r?.[6] ?? "").trim(),
+    }))
+    .filter((x) => norm(x.runner) === routeName)
+    .filter((x) => x.action === "ACCEPTED")
+    .filter((x) => x.contractId);
 
-// Dedup by contractId (keep newest)
-const map = new Map<string, AcceptedContract>();
-for (const x of acceptedAll) {
-  const prev = map.get(x.contractId);
-  if (!prev) {
-    map.set(x.contractId, {
-      contractId: x.contractId,
-      title: x.title || x.contractId,
-      period: x.period || "—",
-      ts: x.ts,
-      meta: x.meta,
-    });
-    continue;
+  // Dedup by contractId (keep newest)
+  const map = new Map<string, AcceptedContract>();
+  for (const x of acceptedAll) {
+    const prev = map.get(x.contractId);
+    if (!prev) {
+      map.set(x.contractId, {
+        contractId: x.contractId,
+        title: x.title || x.contractId,
+        period: x.period || "—",
+        ts: x.ts,
+        meta: x.meta,
+      });
+      continue;
+    }
+
+    const tPrev = safeDate(prev.ts)?.getTime() ?? 0;
+    const tCur = safeDate(x.ts)?.getTime() ?? 0;
+    if (tCur >= tPrev) {
+      map.set(x.contractId, {
+        contractId: x.contractId,
+        title: x.title || x.contractId,
+        period: x.period || "—",
+        ts: x.ts,
+        meta: x.meta,
+      });
+    }
   }
 
-  const tPrev = safeDate(prev.ts)?.getTime() ?? 0;
-  const tCur = safeDate(x.ts)?.getTime() ?? 0;
-  if (tCur >= tPrev) {
-    map.set(x.contractId, {
-      contractId: x.contractId,
-      title: x.title || x.contractId,
-      period: x.period || "—",
-      ts: x.ts,
-      meta: x.meta,
-    });
-  }
-}
-
-const acceptedContracts = Array.from(map.values()).sort((a, b) => {
-  const ta = safeDate(a.ts)?.getTime() ?? 0;
-  const tb = safeDate(b.ts)?.getTime() ?? 0;
-  return tb - ta;
-});
-
-
+  const acceptedContracts = Array.from(map.values()).sort((a, b) => {
+    const ta = safeDate(a.ts)?.getTime() ?? 0;
+    const tb = safeDate(b.ts)?.getTime() ?? 0;
+    return tb - ta;
+  });
 
   // Name | Week# | WeekStart | WeekEnd | WeeklyKM
   const weeklyRaw = await getSheet("API_Weekly!A2:E3307");
@@ -330,6 +329,12 @@ const acceptedContracts = Array.from(map.values()).sort((a, b) => {
   const kmToSafety = Math.max(0, minRequired - runner.yearlyKm);
 
   const activeWeeks = weekly.length;
+
+  // ✅ Avg weekly mileage (last 4 completed weeks)
+  const last4Weeks = weekly.slice(-4);
+  const avgLast4 = last4Weeks.length
+    ? last4Weeks.reduce((s, w) => s + w.km, 0) / last4Weeks.length
+    : 0;
 
   // ===== Chart data: weekly km + roll4 + cumulative + expected cumulative =====
   const today = new Date();
@@ -417,8 +422,7 @@ const acceptedContracts = Array.from(map.values()).sort((a, b) => {
 
   const remainingKm = Math.max(0, annualTarget - runner.yearlyKm);
 
-  const projectedDays =
-    annualTarget > 0 && kmPerDay > 0.05 ? Math.ceil(remainingKm / kmPerDay) : null;
+  const projectedDays = annualTarget > 0 && kmPerDay > 0.05 ? Math.ceil(remainingKm / kmPerDay) : null;
 
   const projectedDate = projectedDays ? addDays(today, projectedDays) : null;
 
@@ -486,7 +490,7 @@ const acceptedContracts = Array.from(map.values()).sort((a, b) => {
               </span>
             </div>
 
-            {/* Next level progress */}
+            {/* Next level progress */} 
             <div className="mt-6">
               <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
                 <div className="text-neutral-300 font-semibold">Hierarchy progress</div>
@@ -504,7 +508,10 @@ const acceptedContracts = Array.from(map.values()).sort((a, b) => {
               </div>
 
               <div className="mt-3 h-3 bg-neutral-900/60 rounded-full overflow-hidden">
-                <div className={`h-full ${level.accentBar}`} style={{ width: `${tier.pct}%` }} />
+                <div
+  className={`h-full ${tier.next ? tier.next.accentBar : tier.current.accentBar}`}
+  style={{ width: `${tier.pct}%` }}
+/><div className={`h-full ${level.accentBar}`} style={{ width: `${tier.pct}%` }} />
               </div>
 
               <div className="mt-3 text-neutral-500 text-xs">
@@ -527,6 +534,7 @@ const acceptedContracts = Array.from(map.values()).sort((a, b) => {
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <Stat label="Weekly Target" value={weeklyTarget ? `${fmtKm(weeklyTarget)} km` : "—"} />
           <Stat label="Active Weeks" value={String(activeWeeks)} />
+          <Stat label="Avg KM (last 4 weeks)" value={`${fmtKm(avgLast4)} km`} sub="Mean of last 4 completed weeks" />
           <Stat label="🔥 Running Streak" value={`${runStreak} weeks`} />
           <Stat label="🎯 Target Hit Rate" value={weeklyTarget ? `${targetHitRate.toFixed(0)}%` : "—"} />
           <Stat label="⏱️ Pace vs Plan" value={daysBadge.label} sub={daysBadge.sub} />
@@ -540,41 +548,32 @@ const acceptedContracts = Array.from(map.values()).sort((a, b) => {
         </section>
 
         {/* ACCEPTED CONTRACTS */}
-<section className="bg-neutral-900/70 rounded-3xl p-8 ring-1 ring-neutral-800">
-  <div className="text-neutral-400 text-xs uppercase tracking-wider">Paper</div>
-  <div className="text-2xl font-bold mt-2">Active Contracts</div>
-  <div className="text-neutral-500 text-sm mt-1">
-    Clauses this runner has signed. Permanent record.
-  </div>
+        <section className="bg-neutral-900/70 rounded-3xl p-8 ring-1 ring-neutral-800">
+          <div className="text-neutral-400 text-xs uppercase tracking-wider">Paper</div>
+          <div className="text-2xl font-bold mt-2">Active Contracts</div>
+          <div className="text-neutral-500 text-sm mt-1">Clauses this runner has signed. Permanent record.</div>
 
-  {acceptedContracts.length === 0 ? (
-    <div className="mt-6 text-neutral-500 text-sm">No accepted contracts yet.</div>
-  ) : (
-    <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-      {acceptedContracts.map((c) => (
-        <div
-          key={c.contractId}
-          className="rounded-2xl ring-1 ring-neutral-800 bg-neutral-950/40 p-5"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-xs uppercase tracking-[0.3em] text-neutral-500">
-              {c.period}
+          {acceptedContracts.length === 0 ? (
+            <div className="mt-6 text-neutral-500 text-sm">No accepted contracts yet.</div>
+          ) : (
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              {acceptedContracts.map((c) => (
+                <div key={c.contractId} className="rounded-2xl ring-1 ring-neutral-800 bg-neutral-950/40 p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs uppercase tracking-[0.3em] text-neutral-500">{c.period}</div>
+                    <div className="text-xs text-neutral-500">{fmtAcceptedTs(c.ts)}</div>
+                  </div>
+
+                  <div className="mt-2 text-lg font-semibold text-white">{c.title}</div>
+
+                  <div className="mt-2 text-xs text-neutral-500">
+                    ID: <span className="text-neutral-300">{c.contractId}</span>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="text-xs text-neutral-500">{fmtAcceptedTs(c.ts)}</div>
-          </div>
-
-          <div className="mt-2 text-lg font-semibold text-white">
-            {c.title}
-          </div>
-
-          <div className="mt-2 text-xs text-neutral-500">
-            ID: <span className="text-neutral-300">{c.contractId}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  )}
-</section>
+          )}
+        </section>
 
         {/* WEEKLY BARS */}
         <section className="bg-neutral-900/70 rounded-3xl p-8 ring-1 ring-neutral-800">
@@ -590,11 +589,10 @@ const acceptedContracts = Array.from(map.values()).sort((a, b) => {
           ) : null}
         </section>
 
-
         {/* CHARTS */}
         <section className="space-y-4">
           <div>
-            <div className="text-neutral-400 text-xs uppercase tracking-wider">Analytics</div>
+            <div className="text-neutral-400 text-xs uppercase tracking-wider"></div>
             <div className="text-2xl font-bold mt-2">Graphs</div>
             <div className="text-neutral-500 text-sm mt-1">
               Weekly KM + rolling average + <span className="text-neutral-300">cumulative vs expected</span>.

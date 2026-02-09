@@ -25,23 +25,48 @@ export default function LoginPage() {
 
   const [step, setStep] = useState<Step>("LOCK");
 
-  // LOCK (Terminal)
+  // LOCK
   const [pw, setPw] = useState("");
-  const [err, setErr] = useState("");
-  const [terminalState, setTerminalState] = useState<
-    "IDLE" | "CONNECTING" | "DENIED" | "GRANTED"
-  >("IDLE");
+  const [errFlash, setErrFlash] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const pwRef = useRef<HTMLInputElement | null>(null);
+
+  // LOCK intro
+  const [showTitle, setShowTitle] = useState(false);
+  const [showPrompt, setShowPrompt] = useState(false);
+
+  // Audio
+  const [audioBlocked, setAudioBlocked] = useState(false);
 
   // REVIEW
   const [reviewCleared, setReviewCleared] = useState(false);
-  const [audioBlocked, setAudioBlocked] = useState(false);
+  const REVIEW_CLEAR_MS = 2400;
+  const REVIEW_TOTAL_MS = 3900;
 
-  // Tune review duration here
-  const REVIEW_CLEAR_MS = 2400; // when status flips to CLEARED
-  const REVIEW_TOTAL_MS = 3900; // when INDUCTED appears
+  // Guards
+  const grantedFiredRef = useRef(false);
+  const lastStampAtRef = useRef(0);
 
-  // OATH / Case File Dossier (Articles)
+  // ====== NEW: one-shot audio bootstrap + timing control ======
+  const bootedRef = useRef(false);
+  const ambienceStartedRef = useRef(false);
+  const stopAmbienceBeforeStampRef = useRef(false);
+
+  // used to cancel pending timers when leaving LOCK etc
+  const lockTimersRef = useRef<number[]>([]);
+  const clearLockTimers = useCallback(() => {
+    lockTimersRef.current.forEach((id) => window.clearTimeout(id));
+    lockTimersRef.current = [];
+  }, []);
+
+  const stopMainTrack = useCallback(() => {
+    try {
+      (audio as any)?.stop?.();
+      (audio as any)?.pause?.();
+    } catch {}
+  }, [audio]);
+
+  // OATH rules (unchanged)
   const RULES: Rule[] = useMemo(
     () => [
       { id: "target", text: "I have pledged an annual mileage target. Once sworn, this target is final." },
@@ -54,14 +79,8 @@ export default function LoginPage() {
         id: "first",
         text: "The first member to reach 100% of their annual target will receive a ₹1000 leader bonus, funded equally by the remaining members.",
       },
-      {
-        id: "noexcuses",
-        text: "Conditions, injuries, devices, or circumstances do not alter the terms. Only completed distance is recognized.",
-      },
-      {
-        id: "respect",
-        text: "Disorder, manipulation, or disrespect will be met with penalties at the discretion of the family.",
-      },
+      { id: "noexcuses", text: "Conditions, injuries, devices, or circumstances do not alter the terms. Only completed distance is recognized." },
+      { id: "respect", text: "Disorder, manipulation, or disrespect will be met with penalties at the discretion of the family." },
       { id: "strava", text: "If the activity is not logged on Strava, it doesn't count." },
       { id: "closing", text: "I accept these terms willingly. I enter the Mileage Mafia by choice, and remain by discipline." },
     ],
@@ -88,114 +107,173 @@ export default function LoginPage() {
     setChecks((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  // ---- Audio helpers ----
-  const stopAudio = useCallback(() => {
-    const a: any = audio as any;
-    try {
-      a.stop?.();
-      a.pause?.();
-    } catch {
-      // ignore
-    }
-  }, [audio]);
-
-  const tryPlayAmbience = useCallback(async () => {
+  // -------------------
+  // Audio helpers (robust)
+  // -------------------
+  const startAmbience = useCallback(async () => {
     setAudioBlocked(false);
     try {
-      await audio.playAmbience();
+      await (audio as any)?.playAmbience?.();
+      ambienceStartedRef.current = true;
     } catch {
       setAudioBlocked(true);
+      ambienceStartedRef.current = false;
+      throw new Error("ambience blocked");
     }
   }, [audio]);
 
-  const tryPlayMusic = useCallback(async () => {
+  const startNoir = useCallback(async () => {
     setAudioBlocked(false);
     try {
-      await audio.playMusic(0);
+      await (audio as any)?.playMusic?.(0);
     } catch {
       setAudioBlocked(true);
+      throw new Error("music blocked");
     }
   }, [audio]);
 
-  // Ambience should play on LOCK automatically
+  const bootAudioFromGesture = useCallback(async () => {
+    // Must run from a real user gesture (pointer/key/focus)
+    if (bootedRef.current) return;
+    bootedRef.current = true;
+
+    setAudioBlocked(false);
+
+    try {
+      // unlock both WebAudio + HTMLAudioElement
+      await (audio as any)?.unlock?.();
+
+      // preload SFX so stamp NEVER misses
+      await (audio as any)?.preloadSfx?.();
+
+      // do NOT start ambience immediately: requirement = "a few seconds after pw page"
+      // schedule it AFTER gesture (so it won't be blocked)
+      if (step === "LOCK") {
+        const id = window.setTimeout(() => {
+          // don't start if we've already moved past LOCK or if we plan to stop before stamp
+          if (step !== "LOCK") return;
+          if (stopAmbienceBeforeStampRef.current) return;
+          void startAmbience();
+        }, 2200); // "a few seconds" (tweak: 1800–2800)
+        lockTimersRef.current.push(id);
+      }
+    } catch {
+      // allow retry next gesture
+      bootedRef.current = false;
+      setAudioBlocked(true);
+    }
+  }, [audio, startAmbience, step]);
+
+  // LOCK intro sequence
   useEffect(() => {
     if (step !== "LOCK") return;
-    // best effort autoplay
-    void tryPlayAmbience();
-  }, [step, tryPlayAmbience]);
 
-  const resetBackToLock = useCallback(() => {
-    stopAudio();
-    setAudioBlocked(false);
-    setReviewCleared(false);
+    clearLockTimers();
+    setShowTitle(false);
+    setShowPrompt(false);
 
-    setStep("LOCK");
-    setPw("");
-    setErr("");
-    setChecks(initialChecks);
-    setSig("");
-    setTerminalState("IDLE");
+    const t1 = window.setTimeout(() => setShowTitle(true), 650);
+    const t2 = window.setTimeout(() => {
+      setShowPrompt(true);
+      requestAnimationFrame(() => pwRef.current?.focus());
+    }, 1450);
 
-    requestAnimationFrame(() => {
-      pwRef.current?.focus();
-      pwRef.current?.click?.();
-    });
-  }, [initialChecks, stopAudio]);
+    lockTimersRef.current.push(t1, t2);
 
+    return () => {
+      clearLockTimers();
+    };
+  }, [step, clearLockTimers]);
+
+  // Important: if we leave LOCK, cancel any pending "start ambience in a few seconds"
+  useEffect(() => {
+    if (step !== "LOCK") {
+      clearLockTimers();
+    }
+  }, [step, clearLockTimers]);
+
+  // -------------------
+  // Auth submit
+  // -------------------
   const onSubmitPassword = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      setErr("");
       if (step !== "LOCK") return;
+      if (submitting) return;
+
+      // Ensure boot attempt happens on submit too (mobile "Go")
+      void bootAudioFromGesture();
 
       if (!pw.trim()) {
-        setErr("ACCESS KEY REQUIRED");
-        setTerminalState("DENIED");
-        window.setTimeout(() => setTerminalState("IDLE"), 650);
+        setErrFlash(true);
+        window.setTimeout(() => setErrFlash(false), 450);
         return;
       }
 
-      setTerminalState("CONNECTING");
+      setSubmitting(true);
+      setErrFlash(false);
 
-      const res = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: pw }),
-      });
-
-      const data = await res.json().catch(() => ({ ok: false }));
-      if (!data.ok) {
-        setErr("ACCESS DENIED");
-        setTerminalState("DENIED");
-        window.setTimeout(() => setTerminalState("IDLE"), 700);
-        setPw("");
-        requestAnimationFrame(() => {
-          pwRef.current?.focus();
-          pwRef.current?.click?.();
+      try {
+        const res = await fetch("/api/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: pw }),
         });
-        return;
-      }
 
-      setTerminalState("GRANTED");
-      // tiny beat then proceed
-      window.setTimeout(() => setStep("OATH"), 520);
+        const data = await res.json().catch(() => ({ ok: false }));
+        if (!data.ok) {
+          setPw("");
+          setErrFlash(true);
+          window.setTimeout(() => setErrFlash(false), 650);
+          requestAnimationFrame(() => pwRef.current?.focus());
+          return;
+        }
+
+        // Reset induction guard for this run-through
+        grantedFiredRef.current = false;
+        lastStampAtRef.current = 0;
+
+        setStep("OATH");
+      } finally {
+        setSubmitting(false);
+      }
     },
-    [pw, step]
+    [pw, step, submitting, bootAudioFromGesture]
   );
 
   const onSwear = useCallback(() => {
     if (step !== "OATH") return;
     if (!canSwear) return;
 
-    setErr("");
     setAuthed();
-
-    setAudioBlocked(false);
     setReviewCleared(false);
     setStep("REVIEW");
   }, [canSwear, step]);
 
-  // REVIEW timers (flip → CLEARED, then → GRANTED)
+  const resetBackToLock = useCallback(() => {
+    // Stop whatever is playing
+    stopMainTrack();
+
+    // Reset flags
+    ambienceStartedRef.current = false;
+    stopAmbienceBeforeStampRef.current = false;
+    bootedRef.current = false;
+
+    setStep("LOCK");
+    setPw("");
+    setErrFlash(false);
+    setSubmitting(false);
+    setChecks(initialChecks);
+    setSig("");
+    setReviewCleared(false);
+
+    grantedFiredRef.current = false;
+    lastStampAtRef.current = 0;
+
+    requestAnimationFrame(() => pwRef.current?.focus());
+  }, [initialChecks, stopMainTrack]);
+
+  // REVIEW timers
   useEffect(() => {
     if (step !== "REVIEW") return;
 
@@ -208,27 +286,60 @@ export default function LoginPage() {
     };
   }, [step]);
 
-  // Noir starts when INDUCTED is on-screen
+  // ✅ GRANTED: stop ambience -> stamp -> noir immediately after
   useEffect(() => {
     if (step !== "GRANTED") return;
 
-    // optional: try to align with the stamp hit moment
-    // (keeps it feeling like the music starts "on stamp")
-    const t = window.setTimeout(() => {
-      // if you have SFX wired, this is the vibe:
+    if (grantedFiredRef.current) return;
+    grantedFiredRef.current = true;
+
+    // Requirement:
+    // ambience continues UNTIL stamp is heard → so stop ambience right before stamp hit
+    // then noir starts immediately after stamp
+    const t = window.setTimeout(async () => {
+      // stop ambience right before stamp
+      stopAmbienceBeforeStampRef.current = true;
+      if (ambienceStartedRef.current) {
+        stopMainTrack(); // kills ambience (shared audio element)
+        ambienceStartedRef.current = false;
+      }
+
+      // Play stamp (preloaded at boot; should not miss)
+      const now = Date.now();
+      if (now - lastStampAtRef.current > 900) {
+        lastStampAtRef.current = now;
+        try {
+          (audio as any)?.sfx?.("stamp", { volume: 0.95, interrupt: true });
+        } catch {}
+      }
+
+      // Noir IMMEDIATELY after stamp
+      // (stamp is an SFX buffer; noir is the HTMLAudioElement. They can overlap a hair,
+      // but this starts noir right after the stamp trigger.)
       try {
-        (audio as any).sfx?.("stamp", { volume: 0.9 });
+        await startNoir();
       } catch {}
-      void tryPlayMusic();
-    }, 220);
+    }, 140);
 
     return () => window.clearTimeout(t);
-  }, [step, audio, tryPlayMusic]);
+  }, [step, audio, startNoir, stopMainTrack]);
 
   // Hotkeys
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (step === "REVIEW") return;
+
+      if (step === "LOCK") {
+        // first key should also boot audio (gesture-based)
+        void bootAudioFromGesture();
+
+        if (e.key === "Escape") {
+          setPw("");
+          setErrFlash(false);
+          requestAnimationFrame(() => pwRef.current?.focus());
+        }
+        return;
+      }
 
       if (step === "GRANTED") {
         if (e.key === "Enter") {
@@ -250,198 +361,124 @@ export default function LoginPage() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [step, canSwear, goLedger, onSwear, resetBackToLock]);
+  }, [step, canSwear, goLedger, onSwear, resetBackToLock, bootAudioFromGesture]);
 
-  // Focus pw input when entering LOCK
-  useEffect(() => {
-    if (step === "LOCK") {
-      requestAnimationFrame(() => {
-        pwRef.current?.focus();
-      });
-    }
-  }, [step]);
-
-  /**
-   * =========================
-   * TERMINAL (LOCK)
-   * =========================
-   */
+  // ==========================================================
+  // LOCK (TV static + centered title)
+  // ==========================================================
   if (step === "LOCK") {
-    const statusLabel =
-      terminalState === "CONNECTING"
-        ? "CONNECTING"
-        : terminalState === "DENIED"
-        ? "DENIED"
-        : terminalState === "GRANTED"
-        ? "GRANTED"
-        : "STANDBY";
-
-    const statusTone =
-      terminalState === "CONNECTING"
-        ? "bg-white/5 ring-white/10 text-neutral-200"
-        : terminalState === "DENIED"
-        ? "bg-red-500/10 ring-red-500/20 text-red-200"
-        : terminalState === "GRANTED"
-        ? "bg-emerald-500/10 ring-emerald-500/20 text-emerald-200"
-        : "bg-white/5 ring-white/10 text-neutral-400";
-
-    const dotTone =
-      terminalState === "CONNECTING"
-        ? "bg-white/60 mm-dot"
-        : terminalState === "DENIED"
-        ? "bg-red-400"
-        : terminalState === "GRANTED"
-        ? "bg-emerald-400"
-        : "bg-white/25";
-
     return (
       <main
         className="fixed inset-0 bg-black text-white overflow-hidden"
-        onMouseDown={() => pwRef.current?.focus()}
-        onTouchStart={() => pwRef.current?.focus()}
+        // ✅ any real gesture boots audio (unlock + preload + schedule ambience)
+        onPointerDown={() => void bootAudioFromGesture()}
+        onTouchStart={() => void bootAudioFromGesture()}
+        onKeyDownCapture={() => void bootAudioFromGesture()}
       >
-        {/* noir bg */}
-        <div className="absolute inset-0">
-          <div className="absolute inset-0 bg-black" />
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                "radial-gradient(900px circle at 50% 18%, rgba(255,255,255,0.06), transparent 55%)," +
-                "radial-gradient(900px circle at 80% 85%, rgba(239,68,68,0.08), transparent 58%)",
-              opacity: 0.95,
-            }}
-          />
-          <div className="pointer-events-none absolute inset-0 noir-noise opacity-[0.12] mix-blend-overlay" />
-          <div className="pointer-events-none absolute inset-0 noir-scanlines opacity-[0.10] mix-blend-overlay" />
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_circle_at_50%_45%,transparent_35%,rgba(0,0,0,0.97)_82%)]" />
+        {/* mild CRT/static layers */}
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute inset-0 mm-static opacity-[0.10] mix-blend-overlay" />
+          <div className="absolute inset-0 mm-scanlines opacity-[0.08] mix-blend-overlay" />
+          <div className="absolute inset-0 bg-[radial-gradient(1100px_circle_at_50%_40%,rgba(255,255,255,0.05),transparent_60%),radial-gradient(900px_circle_at_50%_100%,rgba(0,0,0,0.9),transparent_60%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(1200px_circle_at_50%_35%,transparent_45%,rgba(0,0,0,0.96)_82%)]" />
         </div>
 
         <div className="relative h-full w-full grid place-items-center px-6">
           <form onSubmit={onSubmitPassword} className="w-full max-w-2xl">
-            <div className="rounded-[26px] bg-neutral-950/55 ring-1 ring-neutral-800 shadow-[0_18px_70px_rgba(0,0,0,0.75)] overflow-hidden">
-              {/* top bar */}
-              <div className="px-6 sm:px-7 py-4 border-b border-white/5 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-500">
-                    Mileage Mafia Secure Terminal
-                  </div>
-                  <div className="mt-1 text-sm text-neutral-400 truncate">
-                    mm://private-ledger • auth required
-                  </div>
-                </div>
-
-                <div className={clsx("shrink-0 inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] uppercase tracking-[0.22em] ring-1", statusTone)}>
-                  <span className={clsx("h-1.5 w-1.5 rounded-full", dotTone)} />
-                  {statusLabel}
-                </div>
+            <div className="text-center">
+              <div
+                className={clsx(
+                  "select-none",
+                  "font-black uppercase tracking-[0.42em]",
+                  "text-[13px] sm:text-[14px]",
+                  "transition-opacity duration-[1200ms] ease-out",
+                  showTitle ? "opacity-100" : "opacity-0"
+                )}
+              >
+                Mileage Mafia
               </div>
 
-              {/* “terminal” body */}
-              <div className="relative p-6 sm:p-7">
-                <div className="pointer-events-none absolute inset-0 opacity-[0.12] mix-blend-overlay noir-noise" />
-                <div className="pointer-events-none absolute inset-0 opacity-[0.10] noir-scanlines mix-blend-overlay" />
+              <div className="mt-10 flex items-center justify-center gap-2 font-mono text-[14px] sm:text-[15px] text-neutral-200">
+                <span className={clsx("transition-opacity duration-500", showPrompt ? "opacity-100" : "opacity-0")}>
+                  &gt;
+                </span>
 
-                <div className="relative font-mono">
-                  <div className="text-[12px] sm:text-[13px] leading-relaxed text-neutral-300">
-                    <Line dim>$</Line> <Line>handshake --target mm-ledger</Line>
-                    <Line dim>&gt;</Line>{" "}
-                    <Line>
-                      link: <span className="text-neutral-200">ok</span> • integrity:{" "}
-                      <span className="text-neutral-200">verified</span>
-                    </Line>
-                    <Line dim>&gt;</Line>{" "}
-                    <Line>
-                      clearance:{" "}
-                      <span className={terminalState === "DENIED" ? "text-red-200" : terminalState === "GRANTED" ? "text-emerald-200" : "text-neutral-200"}>
-                        pending
-                      </span>
-                    </Line>
-                    <div className="mt-4 h-px bg-white/5" />
-                  </div>
+                <input
+                  ref={pwRef}
+                  type="password"
+                  value={pw}
+                  onFocus={() => void bootAudioFromGesture()}
+                  onKeyDown={() => void bootAudioFromGesture()}
+                  onChange={(e) => setPw(e.target.value)}
+                  autoComplete="current-password"
+                  enterKeyHint="go"
+                  spellCheck={false}
+                  disabled={submitting}
+                  className={clsx(
+                    "bg-transparent outline-none",
+                    "w-[min(360px,78vw)]",
+                    "text-neutral-100",
+                    "placeholder:text-neutral-700",
+                    errFlash ? "mm-shake" : ""
+                  )}
+                  style={{ opacity: showPrompt ? 1 : 0, transition: "opacity 500ms ease" }}
+                />
 
-                  <div className="mt-5">
-                    <label className="block text-[10px] uppercase tracking-[0.35em] text-neutral-600 font-sans">
-                      Access key
-                    </label>
-
-                    <div className="mt-2 flex items-center gap-3">
-                      <span className="text-neutral-500 select-none">$</span>
-                      <input
-                        ref={pwRef}
-                        type="password"
-                        value={pw}
-                        onChange={(e) => setPw(e.target.value)}
-                        autoComplete="current-password"
-                        enterKeyHint="go"
-                        placeholder="enter key"
-                        className={clsx(
-                          "flex-1 rounded-2xl bg-black/45 px-4 py-3 text-[14px] tracking-[0.12em]",
-                          "ring-1 outline-none transition",
-                          err ? "ring-red-500/35 focus:ring-red-500/45" : "ring-white/10 focus:ring-red-500/25"
-                        )}
-                      />
-
-                      <button
-                        type="submit"
-                        className={clsx(
-                          "px-4 py-2 rounded-full text-sm font-semibold transition font-sans",
-                          "bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10"
-                        )}
-                      >
-                        Execute ↵
-                      </button>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between gap-3 text-xs text-neutral-500 font-sans">
-                      <span>Enter to submit • Tap anywhere to focus</span>
-
-                      {audioBlocked ? (
-                        <button
-                          type="button"
-                          onClick={tryPlayAmbience}
-                          className="px-3 py-1.5 rounded-full bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition"
-                        >
-                          Enable Audio
-                        </button>
-                      ) : (
-                        <span className="text-neutral-600">ambience: armed</span>
-                      )}
-                    </div>
-
-                    {err ? (
-                      <div className="mt-4 text-red-200 text-[11px] tracking-[0.25em] uppercase font-sans">
-                        {err}
-                      </div>
-                    ) : null}
-
-                    {terminalState === "GRANTED" ? (
-                      <div className="mt-4 text-emerald-200 text-[11px] tracking-[0.25em] uppercase font-sans">
-                        Clearance granted.
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {/* hidden submit button keeps mobile Go reliable */}
-                  <button type="submit" className="hidden" aria-hidden />
-                </div>
+                <span className={clsx("mm-cursor", errFlash ? "text-red-300" : "text-neutral-200")}>▍</span>
               </div>
 
-              {/* footer */}
-              <div className="border-t border-white/5 px-6 sm:px-7 py-4">
-                <div className="text-[11px] text-neutral-500 flex flex-wrap items-center gap-x-4 gap-y-1">
-                  <span className="uppercase tracking-[0.28em]">MM SECURE</span>
-                  <span className="text-neutral-700">•</span>
-                  <span>unauthorized access is logged</span>
-                </div>
+              <div className="mt-10 h-5 text-[10px] uppercase tracking-[0.35em] text-neutral-700">
+                {audioBlocked ? "tap or type once to enable audio" : "\u00A0"}
               </div>
+
+              <button type="submit" className="hidden" aria-hidden />
             </div>
           </form>
         </div>
 
         <style>{`
-          .mm-dot{ animation: mmDot 900ms ease-in-out infinite; }
-          @keyframes mmDot{ 0%,100%{ opacity: .25 } 50%{ opacity: .9 } }
+          /* ===== LOCK CRT/static ===== */
+          .mm-static{
+            background-image:
+              url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+            background-size: 260px 260px;
+            animation: mmNoiseDrift 6s linear infinite;
+          }
+          @keyframes mmNoiseDrift{
+            0%{ transform: translate3d(0,0,0); }
+            50%{ transform: translate3d(-10px,6px,0); }
+            100%{ transform: translate3d(0,0,0); }
+          }
+          .mm-scanlines{
+            background: repeating-linear-gradient(
+              to bottom,
+              rgba(255,255,255,0.07),
+              rgba(255,255,255,0.07) 1px,
+              transparent 1px,
+              transparent 4px
+            );
+          }
+
+          /* cursor + shake */
+          .mm-cursor{
+            display:inline-block;
+            opacity: 0.75;
+            animation: mmBlink 900ms steps(1,end) infinite;
+          }
+          @keyframes mmBlink{
+            0%,49%{ opacity: .12; }
+            50%,100%{ opacity: .85; }
+          }
+          .mm-shake{
+            animation: mmShake 220ms ease-in-out 0s 2;
+          }
+          @keyframes mmShake{
+            0%{ transform: translateX(0); }
+            25%{ transform: translateX(-6px); }
+            50%{ transform: translateX(6px); }
+            75%{ transform: translateX(-4px); }
+            100%{ transform: translateX(0); }
+          }
         `}</style>
       </main>
     );
@@ -449,8 +486,7 @@ export default function LoginPage() {
 
   /**
    * =========================
-   * CASE FILE DOSSIER → REVIEWING → STAMP INDUCTED
-   * (unchanged)
+   * OATH/REVIEW/GRANTED (unchanged visuals + restored stamper CSS)
    * =========================
    */
   return (
@@ -483,18 +519,14 @@ export default function LoginPage() {
 
               <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">
                 Status:{" "}
-                {reviewCleared ? (
-                  <span className="mm-cleared font-semibold">CLEARED</span>
-                ) : (
-                  <span className="text-neutral-500">Reviewing</span>
-                )}
+                {reviewCleared ? <span className="mm-cleared font-semibold">CLEARED</span> : <span className="text-neutral-500">Reviewing</span>}
               </div>
             </div>
           </div>
         </div>
       ) : null}
 
-      {/* GRANTED overlay (STAMP INDUCTED) */}
+      {/* GRANTED overlay */}
       {step === "GRANTED" ? (
         <div className="absolute inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-white/10 mm-flash" />
@@ -506,7 +538,6 @@ export default function LoginPage() {
                 <div className="text-3xl md:text-4xl font-black tracking-tight">INDUCTED</div>
                 <div className="mt-3 text-neutral-400 text-sm">Your entry has been recorded.</div>
 
-                {/* stamp stage */}
                 <div className="relative mt-7 h-24 grid place-items-center">
                   <div className="mm-filed">
                     <div className="mm-filed__inner">FILED • MM-2026</div>
@@ -544,7 +575,7 @@ export default function LoginPage() {
                   <div className="mt-4">
                     <button
                       type="button"
-                      onClick={tryPlayMusic}
+                      onClick={bootAudioFromGesture}
                       className="px-5 py-2.5 rounded-full bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition text-sm"
                     >
                       Enable Audio
@@ -562,11 +593,10 @@ export default function LoginPage() {
         </div>
       ) : null}
 
-      {/* CASE FILE DOSSIER (OATH) */}
+      {/* OATH */}
       {step === "OATH" ? (
         <div className="relative max-w-5xl mx-auto px-6 py-16">
           <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6">
-            {/* left dossier tab */}
             <aside className="rounded-3xl bg-neutral-950/55 ring-1 ring-neutral-800 shadow-[0_18px_70px_rgba(0,0,0,0.65)] overflow-hidden">
               <div className="relative p-7">
                 <div className="pointer-events-none absolute inset-0 opacity-[0.12] mix-blend-overlay noir-noise" />
@@ -588,7 +618,9 @@ export default function LoginPage() {
                       <div className="mt-2 text-neutral-300">
                         <div className="flex items-center justify-between text-sm">
                           <span>Articles</span>
-                          <span className="tabular-nums">{Object.values(checks).filter(Boolean).length}/{RULES.length}</span>
+                          <span className="tabular-nums">
+                            {Object.values(checks).filter(Boolean).length}/{RULES.length}
+                          </span>
                         </div>
                         <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
                           <div
@@ -623,7 +655,6 @@ export default function LoginPage() {
               </div>
             </aside>
 
-            {/* right dossier body */}
             <section className="rounded-3xl bg-neutral-950/55 ring-1 ring-neutral-800 shadow-[0_18px_70px_rgba(0,0,0,0.75)] overflow-hidden">
               <div className="relative p-8 sm:p-10">
                 <div className="pointer-events-none absolute inset-0 opacity-[0.16] mix-blend-overlay noir-noise" />
@@ -671,12 +702,7 @@ export default function LoginPage() {
                             />
 
                             <span className="relative grid place-items-center h-5 w-5 rounded-full ring-1 ring-neutral-600/80 bg-black/40 transition peer-hover:ring-red-500/40 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-red-500/50">
-                              <span
-                                className={clsx(
-                                  "h-[7px] w-[7px] rounded-full bg-red-500/90 transition",
-                                  accepted ? "scale-100 opacity-100" : "scale-0 opacity-0"
-                                )}
-                              />
+                              <span className={clsx("h-[7px] w-[7px] rounded-full bg-red-500/90 transition", accepted ? "scale-100 opacity-100" : "scale-0 opacity-0")} />
                             </span>
 
                             {accepted ? <span className="pointer-events-none absolute -inset-2 rounded-full mm-notary" /> : null}
@@ -735,8 +761,6 @@ export default function LoginPage() {
                     </button>
 
                     <div className="mt-4 text-xs text-neutral-500">Your file will be reviewed before clearance is granted.</div>
-
-                    {err ? <p className="mt-4 text-red-300 text-sm">{err}</p> : null}
                   </div>
                 </div>
               </div>
@@ -746,75 +770,44 @@ export default function LoginPage() {
       ) : null}
 
       <style>{`
-        /* Review scan bar */
-        @keyframes mmScan {
-          0% { transform: translateX(-60%); opacity: 0.2; }
-          20% { opacity: 0.9; }
-          100% { transform: translateX(260%); opacity: 0.25; }
+        /* noir bg */
+        .noir-crt{ filter: saturate(0.98) contrast(1.06); }
+        .noir-noise{
+          background-image:
+            url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+          background-size: 220px 220px;
         }
-        .mm-scan { animation: mmScan 900ms ease-in-out infinite; }
-
-        /* Accepted strike */
-        .mm-strike { position: relative; display: inline-block; }
-        .mm-strike::after {
-          content: "";
-          position: absolute;
-          left: 0; right: 0;
-          top: 55%;
-          height: 1px;
-          background: rgba(239, 68, 68, 0.33);
-          transform: scaleX(0);
-          transform-origin: left;
-          animation: mmStrike 220ms ease-out forwards;
+        .noir-scanlines{
+          background: repeating-linear-gradient(
+            to bottom,
+            rgba(255,255,255,0.06),
+            rgba(255,255,255,0.06) 1px,
+            transparent 1px,
+            transparent 4px
+          );
         }
-        @keyframes mmStrike { to { transform: scaleX(1); } }
-
-        /* Notary pulse ring */
-        .mm-notary {
-          position: absolute;
-          inset: -8px;
-          border-radius: 999px;
-          box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.22);
-          animation: mmNotary 320ms ease-out both;
-          pointer-events: none;
+        .mm-jitter{ animation: mmJitter 3.2s steps(1,end) infinite; }
+        @keyframes mmJitter{
+          0%,100%{ transform: translate(0,0); }
+          92%{ transform: translate(0,0); }
+          93%{ transform: translate(1px,0); }
+          94%{ transform: translate(-1px,0); }
+          95%{ transform: translate(0,1px); }
+          96%{ transform: translate(0,-1px); }
         }
-        @keyframes mmNotary {
-          0% { transform: scale(0.75); opacity: 0; }
-          45% { opacity: 1; }
-          100% { transform: scale(1.2); opacity: 0; }
+        .mm-drift{ animation: mmDrift 9s ease-in-out infinite; }
+        @keyframes mmDrift{
+          0%,100%{ transform: translate3d(0,0,0); }
+          50%{ transform: translate3d(8px,-6px,0); }
         }
-
-        /* Small pill stamp */
-        .mm-stamp {
-          font-size: 10px;
-          letter-spacing: 0.28em;
-          text-transform: uppercase;
-          color: rgba(239, 68, 68, 0.75);
-          border: 1px solid rgba(239, 68, 68, 0.35);
-          padding: 2px 6px;
-          border-radius: 999px;
-          transform: rotate(-6deg);
-          animation: mmStamp 220ms ease-out both;
-          mix-blend-mode: screen;
-        }
-        @keyframes mmStamp {
-          0% { opacity: 0; transform: translateY(-2px) rotate(-10deg) scale(0.96); }
-          100% { opacity: 1; transform: translateY(0) rotate(-6deg) scale(1); }
+        .mm-flash{ animation: mmFlash 240ms ease-out both; }
+        @keyframes mmFlash{
+          0%{ opacity: 0; }
+          30%{ opacity: 0.35; }
+          100%{ opacity: 0; }
         }
 
-        /* CLEARED glow */
-        .mm-cleared {
-          color: rgba(134, 239, 172, 0.92);
-          text-shadow: 0 0 0 rgba(34, 197, 94, 0);
-          animation: mmClearedGlow 1400ms ease-out forwards;
-        }
-        @keyframes mmClearedGlow {
-          0% { text-shadow: 0 0 0 rgba(34, 197, 94, 0); filter: brightness(1); }
-          60% { text-shadow: 0 0 14px rgba(34, 197, 94, 0.28); }
-          100% { text-shadow: 0 0 22px rgba(34, 197, 94, 0.42); filter: brightness(1.08); }
-        }
-
-        /* Stamp Inducted */
+        /* stamper + filed */
         .mm-stamper{
           position: absolute;
           top: -14px;
@@ -825,6 +818,7 @@ export default function LoginPage() {
           animation: mmSlam 720ms cubic-bezier(.2,.9,.2,1) both;
           filter: drop-shadow(0 18px 30px rgba(0,0,0,0.55));
           opacity: 0.95;
+          pointer-events: none;
         }
         .mm-stamper__top{
           position:absolute;
@@ -852,11 +846,13 @@ export default function LoginPage() {
           80%{ transform: translateX(-50%) translateY(2px) rotate(-8deg); }
           100%{ transform: translateX(-50%) translateY(6px) rotate(-8deg); }
         }
+
         .mm-filed{
           position: relative;
           transform: rotate(-8deg);
           opacity: 0;
           animation: mmFiledIn 180ms ease-out 540ms forwards;
+          pointer-events: none;
         }
         .mm-filed__inner{
           font-size: 13px;
@@ -873,11 +869,70 @@ export default function LoginPage() {
           from{ opacity: 0; transform: rotate(-8deg) scale(0.98); }
           to{ opacity: 1; transform: rotate(-8deg) scale(1); }
         }
+
+        @keyframes mmScan {
+          0% { transform: translateX(-60%); opacity: 0.2; }
+          20% { opacity: 0.9; }
+          100% { transform: translateX(260%); opacity: 0.25; }
+        }
+        .mm-scan { animation: mmScan 900ms ease-in-out infinite; }
+
+        .mm-strike { position: relative; display: inline-block; }
+        .mm-strike::after {
+          content: "";
+          position: absolute;
+          left: 0; right: 0;
+          top: 55%;
+          height: 1px;
+          background: rgba(239, 68, 68, 0.33);
+          transform: scaleX(0);
+          transform-origin: left;
+          animation: mmStrike 220ms ease-out forwards;
+        }
+        @keyframes mmStrike { to { transform: scaleX(1); } }
+
+        .mm-notary {
+          position: absolute;
+          inset: -8px;
+          border-radius: 999px;
+          box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.22);
+          animation: mmNotary 320ms ease-out both;
+          pointer-events: none;
+        }
+        @keyframes mmNotary {
+          0% { transform: scale(0.75); opacity: 0; }
+          45% { opacity: 1; }
+          100% { transform: scale(1.2); opacity: 0; }
+        }
+
+        .mm-stamp {
+          font-size: 10px;
+          letter-spacing: 0.28em;
+          text-transform: uppercase;
+          color: rgba(239, 68, 68, 0.75);
+          border: 1px solid rgba(239, 68, 68, 0.35);
+          padding: 2px 6px;
+          border-radius: 999px;
+          transform: rotate(-6deg);
+          animation: mmStamp 220ms ease-out both;
+          mix-blend-mode: screen;
+        }
+        @keyframes mmStamp {
+          0% { opacity: 0; transform: translateY(-2px) rotate(-10deg) scale(0.96); }
+          100% { opacity: 1; transform: translateY(0) rotate(-6deg) scale(1); }
+        }
+
+        .mm-cleared {
+          color: rgba(134, 239, 172, 0.92);
+          text-shadow: 0 0 0 rgba(34, 197, 94, 0);
+          animation: mmClearedGlow 1400ms ease-out forwards;
+        }
+        @keyframes mmClearedGlow {
+          0% { text-shadow: 0 0 0 rgba(34, 197, 94, 0); filter: brightness(1); }
+          60% { text-shadow: 0 0 14px rgba(34, 197, 94, 0.28); }
+          100% { text-shadow: 0 0 22px rgba(34, 197, 94, 0.42); filter: brightness(1.08); }
+        }
       `}</style>
     </main>
   );
-}
-
-function Line({ children, dim }: { children: React.ReactNode; dim?: boolean }) {
-  return <span className={dim ? "text-neutral-600" : ""}>{children}</span>;
 }

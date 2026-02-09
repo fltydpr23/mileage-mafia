@@ -125,7 +125,7 @@ export default async function LeaderboardPage() {
   const leaderLvl = leader ? getMafiaLevel(leader.yearlyKm) : null;
 
   // Manual for now (later: read from Sheets)
-  const LAST_UPDATED = "7 Feb • 20:18 IST";
+  const LAST_UPDATED = "8 Feb • 22:24 IST";
 
   const APP_HEADER_H = 72; // px
   const LIST_HEADER_H = 56; // px
@@ -158,9 +158,7 @@ export default async function LeaderboardPage() {
             {/* Pot + runner count live on the RIGHT (not under logo) */}
             <div className="flex items-center gap-2 shrink-0">
               <Chip label="Runners" value={String(totalRunners)} />
-              <Link href="/pot" className="block">
-                <PotChip total={totalPot} oathPot={oathPot} penaltyFund={penaltyFund} />
-              </Link>
+              <PotChip total={totalPot} oathPot={oathPot} penaltyFund={penaltyFund} />
             </div>
           </div>
 
@@ -242,7 +240,7 @@ export default async function LeaderboardPage() {
                 value={`${Math.round(totalKm).toLocaleString("en-IN")} km`}
               />
               <MiniKpi label="Avg completion" value={`${avgCompletion.toFixed(1)}%`} />
-              <MiniKpi label="House rule" value="Respect the Code." />
+              <MiniKpi label="House rule" value="Respect the Oath." />
             </div>
           </div>
 
