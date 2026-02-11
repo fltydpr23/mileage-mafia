@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAudio } from "@/components/AudioProvider";
 
 function clsx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
@@ -10,18 +9,15 @@ function clsx(...xs: Array<string | false | null | undefined>) {
 
 export default function LoginDoorPage() {
   const router = useRouter();
-  const audio = useAudio();
 
   const [pw, setPw] = useState("");
   const [errFlash, setErrFlash] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const pwRef = useRef<HTMLInputElement | null>(null);
-
+  const [showForgot, setShowForgot] = useState(false);
   // UX: ambience first, then reveal text slowly
-  const [showTitle, setShowTitle] = useState(false);
-  const [showPrompt, setShowPrompt] = useState(false);
-
-  const [audioBlocked, setAudioBlocked] = useState(false);
+  const [showTitle, setShowTitle] = useState(true);
+  const [showPrompt, setShowPrompt] = useState(true);
 
   const [hintOpen, setHintOpen] = useState(false);
 
@@ -31,57 +27,23 @@ export default function LoginDoorPage() {
     timersRef.current = [];
   }, []);
 
-  // one-shot boot for this page visit
-  const bootedRef = useRef(false);
-
-  const bootAudioFromGesture = useCallback(async () => {
-    if (bootedRef.current) return;
-    bootedRef.current = true;
-
-    setAudioBlocked(false);
-
-    try {
-      await (audio as any)?.unlock?.();
-      await (audio as any)?.preloadSfx?.();
-
-      // Start ambience first (tiny delay keeps it reliable on some mobile browsers)
-      const tA = window.setTimeout(() => {
-        void (async () => {
-          try {
-            await (audio as any)?.playAmbience?.();
-          } catch {
-            setAudioBlocked(true);
-          }
-        })();
-      }, 220);
-
-      // Then reveal text slowly (cinematic)
-      const t1 = window.setTimeout(() => setShowTitle(true), 2100);
-      const t2 = window.setTimeout(() => {
-        setShowPrompt(true);
-        requestAnimationFrame(() => pwRef.current?.focus());
-      }, 3200);
-
-      timersRef.current.push(tA, t1, t2);
-    } catch {
-      bootedRef.current = false;
-      setAudioBlocked(true);
-    }
-  }, [audio]);
-
-  // also boot if user only types
   useEffect(() => {
-    const onFirstKey = () => void bootAudioFromGesture();
-    window.addEventListener("keydown", onFirstKey, { once: true });
-    return () => window.removeEventListener("keydown", onFirstKey);
-  }, [bootAudioFromGesture]);
-
-  useEffect(() => {
-    // reset visuals each mount
-    setShowTitle(false);
-    setShowPrompt(false);
+    // visuals on mount
+    setShowTitle(true);
+    setShowPrompt(true);
+    setShowForgot(false);
     setHintOpen(false);
     clearTimers();
+
+    // reveal forgot-password after a couple seconds
+    const t3 = window.setTimeout(() => setShowForgot(true), 2200);
+    timersRef.current.push(t3);
+
+    // focus password quickly after paint
+    const tF = window.setTimeout(() => {
+      requestAnimationFrame(() => pwRef.current?.focus());
+    }, 120);
+    timersRef.current.push(tF);
 
     return () => clearTimers();
   }, [clearTimers]);
@@ -90,9 +52,6 @@ export default function LoginDoorPage() {
     async (e: React.FormEvent) => {
       e.preventDefault();
       if (submitting) return;
-
-      // boot attempt on submit too
-      void bootAudioFromGesture();
 
       if (!pw.trim()) {
         setErrFlash(true);
@@ -129,20 +88,15 @@ export default function LoginDoorPage() {
         setSubmitting(false);
       }
     },
-    [pw, submitting, router, bootAudioFromGesture]
+    [pw, submitting, router]
   );
 
   return (
-    <main
-      className="fixed inset-0 bg-black text-white overflow-hidden"
-      onPointerDown={() => void bootAudioFromGesture()}
-      onTouchStart={() => void bootAudioFromGesture()}
-      onKeyDownCapture={() => void bootAudioFromGesture()}
-    >
+    <main className="fixed inset-0 bg-black text-white overflow-hidden">
       {/* CRT/static layers */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 mm-static opacity-[0.14] mix-blend-screen" />
-        <div className="absolute inset-0 mm-scanlines opacity-[0.10] mix-blend-screen" />
+        <div className="absolute inset-0 mm-static opacity-[0.26] mix-blend-screen" />
+        <div className="absolute inset-0 mm-scanlines opacity-[0.20] mix-blend-screen" />
         <div className="absolute inset-0 mm-vignette" />
       </div>
 
@@ -178,8 +132,6 @@ export default function LoginDoorPage() {
                 ref={pwRef}
                 type="password"
                 value={pw}
-                onFocus={() => void bootAudioFromGesture()}
-                onKeyDown={() => void bootAudioFromGesture()}
                 onChange={(e) => setPw(e.target.value)}
                 autoComplete="current-password"
                 enterKeyHint="go"
@@ -198,7 +150,12 @@ export default function LoginDoorPage() {
             </div>
 
             {/* Forgot password under input */}
-            <div className="mt-4">
+            <div
+              className={clsx(
+                "mt-4 transition-opacity duration-[900ms] ease-out",
+                showForgot ? "opacity-100" : "opacity-0 pointer-events-none"
+              )}
+            >
               <button
                 type="button"
                 onClick={() => setHintOpen((v) => !v)}
@@ -214,12 +171,8 @@ export default function LoginDoorPage() {
                   hintOpen ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1 pointer-events-none"
                 )}
               >
-                respect all.
+                respect all...?
               </div>
-            </div>
-
-            <div className="mt-10 h-5 text-[10px] uppercase tracking-[0.35em] text-neutral-700">
-              {audioBlocked ? "tap / type once to enable audio" : "\u00A0"}
             </div>
 
             <button type="submit" className="hidden" aria-hidden />

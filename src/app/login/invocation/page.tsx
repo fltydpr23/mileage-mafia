@@ -32,8 +32,7 @@ export default function InvocationPage() {
       "running is the simplest rebellion",
       "the most accessible form of discipline",
       "the closest thing to meditation we were born knowing",
-      "",
-      "mileage mafia",
+
       "",
       "press any key",
     ],
@@ -43,6 +42,7 @@ export default function InvocationPage() {
   const [visibleCount, setVisibleCount] = useState(0);
   const [ready, setReady] = useState(false); // becomes true after full reveal
   const [audioBlocked, setAudioBlocked] = useState(false);
+  const [isFadingOut, setIsFadingOut] = useState(false);
 
   const timersRef = useRef<number[]>([]);
   const clearTimers = useCallback(() => {
@@ -67,8 +67,36 @@ export default function InvocationPage() {
   }, [router]);
 
   const proceed = useCallback(() => {
-    router.push("/login/oath");
-  }, [router]);
+    setIsFadingOut(true);
+
+    const FADE_DURATION = 3600; // ms (slow cinematic fade)
+    const FADE_STEPS = 36;
+    const STEP_TIME = FADE_DURATION / FADE_STEPS;
+
+    let step = 0;
+    const initialVolume = (audio as any)?.volume ?? 0.9;
+
+    const fadeInterval = window.setInterval(() => {
+      step++;
+      const nextVol = initialVolume * (1 - step / FADE_STEPS);
+      try {
+        (audio as any)?.setVolume?.(Math.max(0, nextVol));
+      } catch {}
+
+      if (step >= FADE_STEPS) {
+        window.clearInterval(fadeInterval);
+
+        try {
+          (audio as any)?.stop?.();
+        } catch {}
+
+        // small void beat after full fade
+        window.setTimeout(() => {
+          router.push("/login/oath");
+        }, 220);
+      }
+    }, STEP_TIME);
+  }, [router, audio]);
 
   // Boot audio reliably from a real gesture (and keep ambience running here)
   const bootAudioFromGesture = useCallback(async () => {
@@ -105,7 +133,7 @@ export default function InvocationPage() {
     setVisibleCount(0);
     setReady(false);
 
-    const ambienceLeadIn = 2800; // “few seconds” of only sound
+    const ambienceLeadIn = 5600; // “few seconds” of only sound
     const baseDelay = 2200; // cadence per line
     const blankDelay = 1800; // pauses between stanzas
     const endBuffer = 1600; // let it breathe before allowing proceed
@@ -184,7 +212,7 @@ export default function InvocationPage() {
       onTouchStart={() => skipOrProceed()}
       onKeyDownCapture={() => void bootAudioFromGesture()}
     >
-      {/* Moving TV static / CRT */}
+      {/* Moving TV static / CRT vibe */}
       <div className="pointer-events-none absolute inset-0">
         {/* base flicker */}
         <div className="absolute inset-0 mm-tv-flicker" />
@@ -198,6 +226,14 @@ export default function InvocationPage() {
         {/* vignette */}
         <div className="absolute inset-0 mm-vignette" />
       </div>
+
+      {/* Fade-to-black overlay during exit */}
+      <div
+        className="pointer-events-none absolute inset-0 bg-black transition-opacity duration-[3600ms] ease-linear"
+        style={{
+          opacity: isFadingOut ? 0.85 : 0,
+        }}
+      />
 
       <div className="relative h-full w-full grid place-items-center px-6">
         <div className="w-full max-w-[760px]">

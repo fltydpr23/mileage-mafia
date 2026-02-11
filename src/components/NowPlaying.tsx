@@ -1,165 +1,201 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo } from "react";
 import { useAudio } from "@/components/AudioProvider";
 
-function clamp(n: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, n));
+function fmt(sec: number) {
+  if (!Number.isFinite(sec) || sec < 0) return "0:00";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function fmtTime(sec: number) {
-  if (!Number.isFinite(sec) || sec < 0) return "0:00";
-  const s = Math.floor(sec);
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${m}:${String(r).padStart(2, "0")}`;
+function clsx(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
 }
 
 export default function NowPlaying() {
-  const a = useAudio();
-  const [expanded, setExpanded] = useState(false);
-
-  const track = a.current ?? {
-    title: "—",
-    artist: "Mileage Mafia Radio",
-    src: "",
-  };
+  const {
+    playing,
+    mode,
+    current,
+    currentTime,
+    duration,
+    volume,
+    unlocked,
+    toggle,
+    next,
+    prev,
+    seek,
+    setVolume,
+    unlock,
+    recover,
+  } = useAudio();
 
   const progressPct = useMemo(() => {
-    if (!a.duration || a.duration <= 0) return 0;
-    return clamp((a.currentTime / a.duration) * 100, 0, 100);
-  }, [a.currentTime, a.duration]);
+    if (!duration || duration <= 0) return 0;
+    return Math.max(0, Math.min(100, (currentTime / duration) * 100));
+  }, [currentTime, duration]);
 
-  /* =========================================================
-     MOBILE VERSION (Clean bottom dock)
-  ========================================================== */
-
-  const MobilePlayer = (
-    <div className="fixed bottom-4 left-4 right-4 z-50 sm:hidden">
-      <div className="rounded-2xl bg-neutral-950/80 backdrop-blur-xl ring-1 ring-white/10 shadow-xl overflow-hidden">
-        {/* Compact Bar */}
-        <div
-          onClick={() => setExpanded(!expanded)}
-          className="flex items-center justify-between px-4 py-3 cursor-pointer"
-        >
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wider text-neutral-500">
-              Now Playing • MM Radio
-            </p>
-            <p className="text-sm font-semibold truncate">
-              {track.title}
-            </p>
-          </div>
-
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              a.toggle();
-            }}
-            className="h-9 w-9 rounded-xl bg-white text-black flex items-center justify-center font-bold"
-          >
-            {a.playing ? "❚❚" : "▶"}
-          </button>
-        </div>
-
-        {/* Expandable Controls */}
-        {expanded && (
-          <div className="px-4 pb-4 pt-2 space-y-3 border-t border-white/10">
-            <div className="flex items-center justify-between text-xs text-neutral-500 tabular-nums">
-              <span>{fmtTime(a.currentTime)}</span>
-              <span>{fmtTime(a.duration)}</span>
-            </div>
-
-            <div className="h-1.5 rounded-full bg-neutral-800 overflow-hidden">
-              <div
-                className="h-full bg-white"
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => a.prev()}
-                className="px-4 py-2 rounded-xl bg-neutral-900 ring-1 ring-white/10"
-              >
-                ‹
-              </button>
-
-              <button
-                onClick={() => a.next()}
-                className="px-4 py-2 rounded-xl bg-neutral-900 ring-1 ring-white/10"
-              >
-                ›
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+  const onScrub = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const v = Number(e.target.value);
+      if (!Number.isFinite(v)) return;
+      seek(v);
+    },
+    [seek]
   );
 
-  /* =========================================================
-     DESKTOP VERSION (Floating glass card)
-  ========================================================== */
-
-  const DesktopPlayer = (
-    <div className="hidden sm:block fixed bottom-6 right-6 z-50 w-[380px]">
-      <div className="rounded-3xl bg-neutral-950/70 backdrop-blur-2xl ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.6)] p-5 space-y-4">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.25em] text-neutral-500">
-            Now Playing • MM Radio
-          </p>
-          <p className="mt-1 font-semibold text-white truncate">
-            {track.title}
-          </p>
-          <p className="text-xs text-neutral-400 truncate">
-            {track.artist}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => a.prev()}
-            className="h-10 w-10 rounded-2xl bg-neutral-900 ring-1 ring-white/10"
-          >
-            ‹
-          </button>
-
-          <button
-            onClick={() => a.toggle()}
-            className="h-10 w-10 rounded-2xl bg-white text-black font-bold"
-          >
-            {a.playing ? "❚❚" : "▶"}
-          </button>
-
-          <button
-            onClick={() => a.next()}
-            className="h-10 w-10 rounded-2xl bg-neutral-900 ring-1 ring-white/10"
-          >
-            ›
-          </button>
-        </div>
-
-        <div>
-          <div className="flex justify-between text-xs text-neutral-500 tabular-nums">
-            <span>{fmtTime(a.currentTime)}</span>
-            <span>{fmtTime(a.duration)}</span>
-          </div>
-          <div className="mt-2 h-2 rounded-full bg-neutral-800 overflow-hidden">
-            <div
-              className="h-full bg-white"
-              style={{ width: `${progressPct}%` }}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
+  const onVol = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const v = Number(e.target.value);
+      if (!Number.isFinite(v)) return;
+      setVolume(v);
+    },
+    [setVolume]
   );
+
+  const showTransport = mode === "music";
 
   return (
-    <>
-      {MobilePlayer}
-      {DesktopPlayer}
-    </>
+    <div className="fixed bottom-4 right-4 z-50 w-[360px] max-w-[92vw]">
+      <div className="rounded-2xl bg-neutral-900/95 backdrop-blur-xl ring-1 ring-neutral-800 shadow-2xl overflow-hidden">
+        {/* Top */}
+        <div className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <div className="text-[10px] uppercase tracking-[0.28em] text-neutral-500">
+                  Now Playing
+                </div>
+                <span
+                  className={clsx(
+                    "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-[0.24em]",
+                    mode === "music"
+                      ? "bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-500/20"
+                      : "bg-white/5 text-neutral-300 ring-1 ring-white/10"
+                  )}
+                >
+                  {mode}
+                </span>
+              </div>
+
+              <div className="mt-1 font-semibold truncate">
+                {current?.title || "—"}
+              </div>
+              <div className="text-xs text-neutral-400 truncate">
+                {current?.artist || "Mileage Mafia"}
+              </div>
+
+              {!unlocked ? (
+                <div className="mt-3 text-xs text-neutral-500">
+                  Audio is locked by your browser. Tap <span className="text-neutral-300 font-semibold">Unlock</span>.
+                </div>
+              ) : null}
+            </div>
+
+            <div className="shrink-0 flex items-center gap-2">
+              {!unlocked ? (
+                <button
+                  onClick={() => void unlock()}
+                  className="px-3 py-1.5 rounded-xl bg-white text-black text-xs font-bold hover:opacity-90 transition"
+                  title="Unlock audio"
+                >
+                  Unlock
+                </button>
+              ) : (
+                <button
+                  onClick={() => void recover()}
+                  className="px-3 py-1.5 rounded-xl bg-white/5 ring-1 ring-white/10 text-neutral-200 text-xs font-semibold hover:bg-white/10 transition"
+                  title="Fix silent/buggy playback"
+                >
+                  Fix
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Time / seek */}
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-[11px] text-neutral-500 tabular-nums">
+              <span>{fmt(currentTime)}</span>
+              <span>{fmt(duration)}</span>
+            </div>
+
+            <input
+              aria-label="Seek"
+              type="range"
+              min={0}
+              max={Math.max(0, duration || 0)}
+              step={0.1}
+              value={Math.min(Math.max(0, currentTime || 0), Math.max(0, duration || 0))}
+              onChange={onScrub}
+              className="mt-2 w-full accent-white"
+              disabled={!duration || duration <= 0}
+            />
+
+            <div className="mt-2 h-1 bg-neutral-800 rounded-full overflow-hidden">
+              <div className="h-full bg-white transition-all" style={{ width: `${progressPct}%` }} />
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {showTransport ? (
+                <button
+                  onClick={() => void prev()}
+                  className="h-9 w-9 rounded-xl bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition"
+                  title="Previous"
+                >
+                  ‹‹
+                </button>
+              ) : null}
+
+              <button
+                onClick={() => void toggle()}
+                className="h-9 w-9 rounded-full bg-white text-black font-black flex items-center justify-center hover:opacity-90 transition"
+                title={playing ? "Pause" : "Play"}
+              >
+                {playing ? "❚❚" : "▶"}
+              </button>
+
+              {showTransport ? (
+                <button
+                  onClick={() => void next()}
+                  className="h-9 w-9 rounded-xl bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition"
+                  title="Next"
+                >
+                  ››
+                </button>
+              ) : null}
+            </div>
+
+            {/* Volume */}
+            <div className="flex items-center gap-2 w-32">
+              <span className="text-[10px] uppercase tracking-[0.22em] text-neutral-600">
+                Vol
+              </span>
+              <input
+                aria-label="Volume"
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={Number.isFinite(volume) ? volume : 0.9}
+                onChange={onVol}
+                className="w-full accent-white"
+              />
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="mt-3 text-[10px] uppercase tracking-[0.28em] text-neutral-600">
+            {mode === "music" ? "Noir channel" : "Ambience channel"}
+            {unlocked ? "" : " • locked"}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

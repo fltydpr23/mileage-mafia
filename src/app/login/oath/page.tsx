@@ -12,13 +12,14 @@ function clsx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
 
-// Accent stays, but we’ll use it more selectively (premium feel)
 const ACCENT = {
   ring: "ring-red-500/25",
-  ringStrong: "ring-red-500/35",
-  redSoft: "rgba(239, 68, 68, 0.14)",
   redText: "rgba(239, 68, 68, 0.86)",
 };
+
+function clamp01(n: number) {
+  return Math.max(0, Math.min(1, n));
+}
 
 export default function OathPage() {
   const router = useRouter();
@@ -26,7 +27,9 @@ export default function OathPage() {
 
   const [step, setStep] = useState<Step>("OATH");
 
+  // -------------------------
   // Gate access
+  // -------------------------
   useEffect(() => {
     try {
       if (sessionStorage.getItem("mm_pw_ok") !== "1") router.replace("/login");
@@ -35,9 +38,14 @@ export default function OathPage() {
     }
   }, [router]);
 
-  // ===== Audio: keep ambience through OATH+REVIEW, stamp, then noir immediately =====
-  const grantedFiredRef = useRef(false);
-  const lastStampAtRef = useRef(0);
+  // -------------------------
+  // Ambience control
+  // -------------------------
+  const startAmbience = useCallback(async () => {
+    try {
+      await (audio as any)?.playAmbience?.();
+    } catch {}
+  }, [audio]);
 
   const stopMainTrack = useCallback(() => {
     try {
@@ -46,41 +54,84 @@ export default function OathPage() {
     } catch {}
   }, [audio]);
 
-  const startAmbience = useCallback(async () => {
-    try {
-      await (audio as any)?.playAmbience?.();
-    } catch {}
-  }, [audio]);
-
-  const startNoir = useCallback(async () => {
-    try {
-      await (audio as any)?.playMusic?.(0);
-    } catch {}
-  }, [audio]);
-
-  // Ensure ambience continues when arriving here (and in case of refresh)
+  // Keep ambience on this page
   useEffect(() => {
     void startAmbience();
   }, [startAmbience]);
 
-  // REVIEW
+  // -------------------------
+  // ✅ HARD FIX: Noir prewarm that ALWAYS works
+  // We keep a separate HTMLAudioElement playing at near-zero volume
+  // (started from a user gesture), then fade it up later.
+  // -------------------------
+  const noirElRef = useRef<HTMLAudioElement | null>(null);
+  const noirPrimedRef = useRef(false);
+
+  const ensureNoirElement = useCallback(() => {
+    if (noirElRef.current) return noirElRef.current;
+    const el = new Audio("/audio/noir1.mp3");
+    el.loop = true;
+    el.preload = "auto";
+    el.crossOrigin = "anonymous";
+    el.volume = 0; // start silent, we’ll set to 0.001 before play
+    noirElRef.current = el;
+    return el;
+  }, []);
+
+  const primeNoirFromGesture = useCallback(async () => {
+    if (noirPrimedRef.current) return;
+    noirPrimedRef.current = true;
+
+    // keep your provider unlock too (SFX, etc)
+    try {
+      await (audio as any)?.unlock?.();
+    } catch {}
+
+    const el = ensureNoirElement();
+
+    try {
+      // Important: Safari sometimes treats exactly 0 volume weirdly; use tiny non-zero.
+      el.volume = 0.001;
+      await el.play(); // MUST happen during gesture
+      // leave it running silently; do NOT pause it
+    } catch {
+      noirPrimedRef.current = false;
+    }
+  }, [audio, ensureNoirElement]);
+
+  const fadeNoirTo = useCallback((target: number, ms: number) => {
+    const el = noirElRef.current;
+    if (!el) return;
+
+    const start = el.volume;
+    const end = clamp01(target);
+    const t0 = performance.now();
+
+    const tick = (t: number) => {
+      const p = clamp01((t - t0) / ms);
+      el.volume = start + (end - start) * p;
+      if (p < 1) requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(tick);
+  }, []);
+
+  // -------------------------
+  // REVIEW timers
+  // -------------------------
   const [reviewCleared, setReviewCleared] = useState(false);
   const REVIEW_CLEAR_MS = 2400;
   const REVIEW_TOTAL_MS = 3900;
 
-  // ===== Content =====
+  // -------------------------
+  // Rules
+  // -------------------------
   const RULES: Rule[] = useMemo(
     () => [
       { id: "target", text: "I have pledged an annual mileage target. Once sworn, this target is final." },
       { id: "entryfee", text: "I have contributed ₹1000 to the family pot. Payment is mandatory." },
-      {
-        id: "clause85",
-        text: "If I fail to reach 85% of my annual target by December 31st, an additional penalty of ₹1000 will be charged.",
-      },
-      {
-        id: "first",
-        text: "The first member to reach 100% of their annual target will receive a ₹1000 leader bonus, funded equally by the remaining members.",
-      },
+      { id: "clause85", text: "If I fail to reach 85% of my annual target by December 31st, an additional penalty of ₹1000 will be charged." },
+      { id: "first", text: "The first member to reach 100% of their annual target will receive a ₹1000 leader bonus, funded equally by the remaining members." },
       { id: "noexcuses", text: "Conditions, injuries, devices, or circumstances do not alter the terms. Only completed distance is recognized." },
       { id: "respect", text: "Disorder, manipulation, or disrespect will be met with penalties at the discretion of the family." },
       { id: "strava", text: "If the activity is not logged on Strava, it doesn't count." },
@@ -103,8 +154,6 @@ export default function OathPage() {
   const signed = sig.trim().length >= 3;
   const canSwear = allChecked && signed;
 
-  const goLedger = useCallback(() => router.push("/leaderboard"), [router]);
-
   const toggleRule = useCallback((id: string) => {
     setChecks((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
@@ -113,10 +162,15 @@ export default function OathPage() {
     if (step !== "OATH") return;
     if (!canSwear) return;
 
+    // clicking this is a user gesture: prime noir RIGHT HERE too
+    void primeNoirFromGesture();
+
     setAuthed();
     setReviewCleared(false);
     setStep("REVIEW");
-  }, [canSwear, step]);
+  }, [canSwear, step, primeNoirFromGesture]);
+
+  const goLedger = useCallback(() => router.push("/leaderboard"), [router]);
 
   const resetBackToDoor = useCallback(() => {
     stopMainTrack();
@@ -126,7 +180,34 @@ export default function OathPage() {
     router.replace("/login");
   }, [router, stopMainTrack]);
 
-  // REVIEW timers
+  // -------------------------
+  // Stagger rules on first load
+  // -------------------------
+  const [rulesVisibleCount, setRulesVisibleCount] = useState(0);
+  const ruleTimersRef = useRef<number[]>([]);
+  const clearRuleTimers = useCallback(() => {
+    ruleTimersRef.current.forEach((id) => window.clearTimeout(id));
+    ruleTimersRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    if (step !== "OATH") return;
+
+    clearRuleTimers();
+    setRulesVisibleCount(0);
+
+    const START_DELAY_MS = 520;
+    const RULE_STAGGER_MS = 170;
+
+    for (let i = 0; i < RULES.length; i++) {
+      const id = window.setTimeout(() => setRulesVisibleCount((v) => Math.max(v, i + 1)), START_DELAY_MS + i * RULE_STAGGER_MS);
+      ruleTimersRef.current.push(id);
+    }
+
+    return () => clearRuleTimers();
+  }, [step, RULES.length, clearRuleTimers]);
+
+  // REVIEW timers -> GRANTED
   useEffect(() => {
     if (step !== "REVIEW") return;
 
@@ -139,36 +220,59 @@ export default function OathPage() {
     };
   }, [step]);
 
-  // ✅ GRANTED: stamp SFX (WebAudio) -> stop ambience -> noir immediately
+  // -------------------------
+  // GRANTED: Fade ambience down, fade noir up
+  // -------------------------
+  const grantedFiredRef = useRef(false);
+  const [fadeDim, setFadeDim] = useState(false);
+
   useEffect(() => {
     if (step !== "GRANTED") return;
+
+    // reset dim state each entry
+    setFadeDim(false);
+
     if (grantedFiredRef.current) return;
     grantedFiredRef.current = true;
 
-    const t = window.setTimeout(async () => {
-      // stamp
-      const now = Date.now();
-      if (now - lastStampAtRef.current > 900) {
-        lastStampAtRef.current = now;
-        try {
-          (audio as any)?.sfx?.("stamp", { volume: 0.95 });
-        } catch {}
-      }
+    // Start dim + fade timing
+    const DIM_IN_MS = 120;
+    const FADE_MS = 900;
 
-      // stop ambience immediately after triggering stamp
+    const dimId = window.setTimeout(() => setFadeDim(true), DIM_IN_MS);
+
+    // Fade noir UP (it is already playing silently)
+    const noirUpId = window.setTimeout(() => {
+      fadeNoirTo(0.9, FADE_MS);
+    }, 220);
+
+    // Stop ambience a bit after noir fade begins (so we never need a new play() call)
+    const stopId = window.setTimeout(() => {
       stopMainTrack();
+    }, 420);
 
-      // noir immediately after (tiny beat)
-      window.setTimeout(() => void startNoir(), 90);
-    }, 140);
+    return () => {
+      window.clearTimeout(dimId);
+      window.clearTimeout(noirUpId);
+      window.clearTimeout(stopId);
+    };
+  }, [step, fadeNoirTo, stopMainTrack]);
 
-    return () => window.clearTimeout(t);
-  }, [step, audio, stopMainTrack, startNoir]);
-
+  // -------------------------
   // Hotkeys
+  // -------------------------
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (step === "REVIEW") return;
+
+      if (step === "OATH") {
+        void primeNoirFromGesture();
+        if (canSwear && e.key === "Enter") {
+          e.preventDefault();
+          onSwear();
+        }
+        return;
+      }
 
       if (step === "GRANTED") {
         if (e.key === "Enter") {
@@ -179,29 +283,36 @@ export default function OathPage() {
           e.preventDefault();
           resetBackToDoor();
         }
-        return;
-      }
-
-      if (step === "OATH" && canSwear && e.key === "Enter") {
-        e.preventDefault();
-        onSwear();
       }
     }
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [step, canSwear, goLedger, onSwear, resetBackToDoor]);
+  }, [step, canSwear, onSwear, goLedger, resetBackToDoor, primeNoirFromGesture]);
 
-  // =========================
-  // UI: keep dossier, but make it “Invocation premium”
-  // - ritual serif headings, clean body
-  // - calmer red, more whitespace, less “template”
-  // - animated TV static background (moving)
-  // =========================
+  // Button multi-tap fix: nav lock
+  const navLockRef = useRef(false);
+  const onLedgerClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (navLockRef.current) return;
+      navLockRef.current = true;
+      goLedger();
+      window.setTimeout(() => {
+        navLockRef.current = false;
+      }, 1200);
+    },
+    [goLedger]
+  );
 
   return (
-    <main className="min-h-screen bg-black text-white relative overflow-hidden">
-      {/* premium noir + moving TV static */}
+    <main
+      className="min-h-screen bg-black text-white relative overflow-hidden"
+      onPointerDown={() => void primeNoirFromGesture()}
+      onTouchStart={() => void primeNoirFromGesture()}
+    >
+      {/* background */}
       <div className="pointer-events-none absolute inset-0 noir-layer">
         <div className="absolute inset-0 bg-[#050505]" />
         <div className="absolute inset-0 noir-static opacity-[0.10] mix-blend-overlay" />
@@ -210,24 +321,18 @@ export default function OathPage() {
         <div className="absolute inset-0 noir-vignette" />
       </div>
 
-      {/* REVIEW overlay */}
+      {/* REVIEW */}
       {step === "REVIEW" ? (
-        <div className="absolute inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
-          <div className="relative w-[min(640px,92vw)] rounded-3xl bg-black/70 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_18px_70px_rgba(0,0,0,0.78)] overflow-hidden">
+        <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-auto">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] pointer-events-none" />
+          <div className="relative w-[min(640px,92vw)] rounded-3xl bg-black/70 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_18px_70px_rgba(0,0,0,0.78)] overflow-hidden pointer-events-auto">
             <div className="px-10 py-9 text-center">
-              <div
-                className="text-[10px] uppercase tracking-[0.38em] text-neutral-500 mb-3"
-                style={{ fontFamily: "ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" }}
-              >
-                Case File Processing
-              </div>
+              <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-500 mb-3">Case File Processing</div>
 
               <div
                 className="text-2xl md:text-3xl tracking-tight"
                 style={{
-                  fontFamily:
-                    "ui-serif, Georgia, 'Times New Roman', Times, serif",
+                  fontFamily: "ui-serif, Georgia, 'Times New Roman', Times, serif",
                   letterSpacing: "0.02em",
                   fontWeight: 700,
                 }}
@@ -235,9 +340,7 @@ export default function OathPage() {
                 REVIEWING
               </div>
 
-              <div className="mt-3 text-neutral-400 text-sm">
-                Articles verified. Signature cross-checked. Ledger being stamped.
-              </div>
+              <div className="mt-3 text-neutral-400 text-sm">Articles verified. Signature cross-checked. Clearance being issued.</div>
 
               <div className="mt-8 h-2 rounded-full bg-white/10 overflow-hidden">
                 <div className="h-full w-1/3 bg-white/35 mm-scan" />
@@ -245,25 +348,22 @@ export default function OathPage() {
 
               <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">
                 Status:{" "}
-                {reviewCleared ? (
-                  <span className="mm-cleared font-semibold">CLEARED</span>
-                ) : (
-                  <span className="text-neutral-500">Reviewing</span>
-                )}
+                {reviewCleared ? <span className="mm-cleared font-semibold">CLEARED</span> : <span className="text-neutral-500">Reviewing</span>}
               </div>
             </div>
           </div>
         </div>
       ) : null}
 
-      {/* GRANTED overlay */}
+      {/* GRANTED: CLEAN welcome card (NO “system loading” junk) */}
       {step === "GRANTED" ? (
-        <div className="absolute inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-white/10 mm-flash" />
+        <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-auto">
+          {/* sexy dim during fade */}
+          <div className={clsx("absolute inset-0 pointer-events-none transition-opacity duration-700", fadeDim ? "opacity-60" : "opacity-0")} style={{ background: "black" }} />
 
-          <div className="relative w-[min(660px,92vw)]">
-            <div className="rounded-3xl bg-black/70 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_18px_70px_rgba(0,0,0,0.84)] overflow-hidden">
-              <div className="relative px-10 py-9 text-center">
+          <div className="relative w-[min(680px,92vw)] pointer-events-auto">
+            <div className="rounded-3xl bg-black/70 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_18px_70px_rgba(0,0,0,0.84)] overflow-hidden pointer-events-auto">
+              <div className="relative px-10 py-10 text-center pointer-events-auto">
                 <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-500 mb-3">Mileage Mafia</div>
 
                 <div
@@ -271,35 +371,44 @@ export default function OathPage() {
                   style={{
                     fontFamily: "ui-serif, Georgia, 'Times New Roman', Times, serif",
                     letterSpacing: "0.02em",
-                    fontWeight: 800,
+                    fontWeight: 900,
                   }}
                 >
-                  INDUCTED
+                  CLEARANCE GRANTED
                 </div>
 
-                <div className="mt-3 text-neutral-400 text-sm">Your entry has been recorded.</div>
+                <div className="mt-3 text-neutral-400 text-sm">Welcome to the family. The ledger is now available.</div>
 
-                <div className="relative mt-7 h-24 grid place-items-center">
-                  <div className="mm-filed">
-                    <div className="mm-filed__inner">FILED • MM-2026</div>
-                  </div>
+                <div className="mt-8 mx-auto w-full max-w-[540px] rounded-2xl bg-black/35 ring-1 ring-white/10 px-6 py-6 text-left">
+                  <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">CASE FILE</div>
 
-                  <div className="mm-stamper" aria-hidden>
-                    <div className="mm-stamper__top" />
-                    <div className="mm-stamper__base" />
+                  <div className="mt-4 space-y-2 text-[12px] uppercase tracking-[0.18em] text-neutral-300">
+                    <div className="flex items-center justify-between">
+                      <span>Identity</span>
+                      <span className="text-emerald-200/90">Verified</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Oath</span>
+                      <span className="text-emerald-200/90">Filed</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Ledger Access</span>
+                      <span className="text-emerald-200/90">Enabled</span>
+                    </div>
+                    <div className="mt-4 h-px bg-white/10" />
+                    <div className="flex items-center justify-between">
+                      <span>Status</span>
+                      <span className="mm-cleared font-semibold">CLEARED</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-3 pointer-events-auto">
                   <button
                     type="button"
-                    onClick={goLedger}
-                    className={clsx(
-                      "px-6 py-3 rounded-2xl font-semibold transition",
-                      "bg-white text-black hover:opacity-90",
-                      `ring-1 ${ACCENT.ring}`
-                    )}
-                    style={{ letterSpacing: "0.02em" }}
+                    onClick={onLedgerClick}
+                    className={clsx("px-6 py-3 rounded-2xl font-semibold transition", "bg-white text-black hover:opacity-90", `ring-1 ${ACCENT.ring}`)}
+                    style={{ letterSpacing: "0.02em", touchAction: "manipulation" }}
                   >
                     View the Ledger →
                   </button>
@@ -308,20 +417,13 @@ export default function OathPage() {
                     type="button"
                     onClick={resetBackToDoor}
                     className="px-6 py-3 rounded-2xl font-semibold bg-white/5 ring-1 ring-white/10 text-neutral-300 hover:bg-white/10 transition"
-                    style={{ letterSpacing: "0.02em" }}
+                    style={{ letterSpacing: "0.02em", touchAction: "manipulation" }}
                   >
                     Back to Door
                   </button>
                 </div>
 
-                <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">
-                  Status: <span className="mm-cleared font-semibold">CLEARED</span>
-                </div>
                 <div className="mt-3 text-[10px] text-neutral-600">(Enter = Ledger • Esc = Door)</div>
-
-                <div className="mt-10 text-[10px] tracking-[0.22em] uppercase text-neutral-700">
-                  built by me • all rights reserved
-                </div>
               </div>
             </div>
           </div>
@@ -365,20 +467,15 @@ export default function OathPage() {
                       <div className="mt-2 text-neutral-300">
                         <div className="flex items-center justify-between text-sm">
                           <span>Articles</span>
-                          <span className="tabular-nums">
-                            {Object.values(checks).filter(Boolean).length}/{RULES.length}
-                          </span>
+                          <span className="tabular-nums">{Object.values(checks).filter(Boolean).length}/{RULES.length}</span>
                         </div>
 
                         <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
                           <div
                             className="h-full"
                             style={{
-                              width: `${Math.round(
-                                (Object.values(checks).filter(Boolean).length / Math.max(1, RULES.length)) * 100
-                              )}%`,
-                              background:
-                                "linear-gradient(90deg, rgba(239,68,68,0.78), rgba(239,68,68,0.28))",
+                              width: `${Math.round((Object.values(checks).filter(Boolean).length / Math.max(1, RULES.length)) * 100)}%`,
+                              background: "linear-gradient(90deg, rgba(239,68,68,0.78), rgba(239,68,68,0.28))",
                             }}
                           />
                         </div>
@@ -394,19 +491,14 @@ export default function OathPage() {
                       type="button"
                       onClick={resetBackToDoor}
                       className="w-full px-5 py-3 rounded-2xl bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition font-semibold"
-                      style={{ letterSpacing: "0.02em" }}
+                      style={{ letterSpacing: "0.02em", touchAction: "manipulation" }}
                     >
                       Back to Door
                     </button>
                   </div>
 
-                  <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">
-                    Tip: Enter to file (when cleared)
-                  </div>
-
-                  <div className="mt-6 text-[10px] tracking-[0.22em] uppercase text-neutral-700">
-                    built by me • all rights reserved
-                  </div>
+                  <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">Tip: Enter to file (when cleared)</div>
+                  <div className="mt-6 text-[10px] tracking-[0.22em] uppercase text-neutral-700">built by me • all rights reserved</div>
                 </div>
               </div>
             </aside>
@@ -420,10 +512,7 @@ export default function OathPage() {
                 <div className="relative">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-400">
-                        Mileage Mafia • Dossier
-                      </div>
-
+                      <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-400">Mileage Mafia • Dossier</div>
                       <h2
                         className="mt-2 text-3xl sm:text-4xl tracking-tight"
                         style={{
@@ -434,19 +523,13 @@ export default function OathPage() {
                       >
                         Articles of Entry
                       </h2>
-
-                      <p className="mt-3 text-neutral-400 text-sm leading-relaxed">
-                        Read. Accept. Sign. File.
-                      </p>
+                      <p className="mt-3 text-neutral-400 text-sm leading-relaxed">Read. Accept. Sign. File.</p>
                     </div>
 
                     <div className="shrink-0">
                       <div className="rounded-2xl bg-black/35 ring-1 ring-white/10 px-4 py-3">
                         <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">CLEARANCE</div>
-                        <div
-                          className={clsx("mt-2 text-sm font-semibold", canSwear ? "text-emerald-200" : "text-neutral-300")}
-                          style={{ letterSpacing: "0.02em" }}
-                        >
+                        <div className={clsx("mt-2 text-sm font-semibold", canSwear ? "text-emerald-200" : "text-neutral-300")}>
                           {canSwear ? "READY TO FILE" : "NOT READY"}
                         </div>
                       </div>
@@ -457,16 +540,20 @@ export default function OathPage() {
                   <div className="mt-8 space-y-3">
                     {RULES.map((r, idx) => {
                       const accepted = !!checks[r.id];
+                      const visible = idx < rulesVisibleCount;
 
                       return (
                         <label
                           key={r.id}
                           className={clsx(
-                            "group relative flex items-start gap-3 px-4 py-3 transition cursor-pointer",
+                            "group relative flex items-start gap-3 px-4 py-3 cursor-pointer",
                             "ring-1 ring-white/10 bg-black/35 hover:bg-white/[0.03]",
                             "rounded-2xl",
-                            accepted ? "mm-accepted" : ""
+                            accepted ? "mm-accepted" : "",
+                            "transition-all ease-out",
+                            visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
                           )}
+                          style={{ transitionDuration: "520ms" }}
                         >
                           <span className="relative mt-[3px] shrink-0">
                             <input
@@ -476,18 +563,12 @@ export default function OathPage() {
                               className="peer absolute inset-0 h-5 w-5 opacity-0 cursor-pointer"
                               aria-label={`Accept ${r.id}`}
                             />
-
                             <span className="relative grid place-items-center h-5 w-5 rounded-full ring-1 ring-white/20 bg-black/40 transition peer-hover:ring-white/35 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-red-500/40">
                               <span
-                                className={clsx(
-                                  "h-[7px] w-[7px] rounded-full transition",
-                                  accepted ? "scale-100 opacity-100" : "scale-0 opacity-0"
-                                )}
+                                className={clsx("h-[7px] w-[7px] rounded-full transition", accepted ? "scale-100 opacity-100" : "scale-0 opacity-0")}
                                 style={{ background: "rgba(239,68,68,0.92)" }}
                               />
                             </span>
-
-                            {accepted ? <span className="pointer-events-none absolute -inset-2 rounded-full mm-notary" /> : null}
                           </span>
 
                           <div className="min-w-0 flex-1">
@@ -495,7 +576,6 @@ export default function OathPage() {
                               <span className="text-[10px] uppercase tracking-[0.34em] text-neutral-500">
                                 Article {String(idx + 1).padStart(2, "0")}
                               </span>
-
                               {accepted ? (
                                 <span className="text-[10px] uppercase tracking-[0.28em]" style={{ color: ACCENT.redText }}>
                                   Accepted
@@ -506,17 +586,9 @@ export default function OathPage() {
                             </div>
 
                             <div className="relative mt-2">
-                              <div
-                                className={clsx("text-neutral-200 text-[13.5px] leading-relaxed", accepted ? "opacity-90" : "")}
-                                style={{
-                                  fontFamily:
-                                    "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, 'Segoe UI', Roboto, sans-serif",
-                                  letterSpacing: "0.01em",
-                                }}
-                              >
+                              <div className={clsx("text-neutral-200 text-[13.5px] leading-relaxed", accepted ? "opacity-90" : "")}>
                                 {r.text}
                               </div>
-
                               {accepted ? <div className="pointer-events-none absolute right-0 top-[-6px] mm-ink">INKED</div> : null}
                             </div>
                           </div>
@@ -543,11 +615,7 @@ export default function OathPage() {
                       />
 
                       <div className="mt-2 text-xs text-neutral-500">
-                        {signed ? (
-                          <span className="text-emerald-200/90">Signed.</span>
-                        ) : (
-                          "Type at least 3 characters to sign."
-                        )}
+                        {signed ? <span className="text-emerald-200/90">Signed.</span> : "Type at least 3 characters to sign."}
                       </div>
                     </div>
                   </div>
@@ -572,11 +640,8 @@ export default function OathPage() {
                       File Dossier
                     </button>
 
-                    <div className="mt-4 text-xs text-neutral-500">
-                      Your file will be reviewed before clearance is granted.
-                    </div>
+                    <div className="mt-4 text-xs text-neutral-500">Your file will be reviewed before clearance is granted.</div>
 
-                    {/* subtle red “ritual” hint when ready */}
                     {canSwear ? (
                       <div className="mt-3 text-[10px] uppercase tracking-[0.35em]" style={{ color: ACCENT.redText }}>
                         clearance granted • press enter
@@ -591,7 +656,6 @@ export default function OathPage() {
       ) : null}
 
       <style>{`
-        /* ====== premium moving TV static ====== */
         .noir-layer{ filter: saturate(0.98) contrast(1.06); }
 
         .noir-static{
@@ -637,24 +701,9 @@ export default function OathPage() {
             radial-gradient(1000px_circle_at_50%_120%,rgba(0,0,0,0.94),transparent_64%);
         }
 
-        /* ====== subtle accepted styling ====== */
         .mm-accepted{
           background: rgba(239,68,68,0.08);
           box-shadow: inset 0 0 0 1px rgba(239,68,68,0.14);
-        }
-
-        .mm-notary {
-          position: absolute;
-          inset: -8px;
-          border-radius: 999px;
-          box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.18);
-          animation: mmNotary 320ms ease-out both;
-          pointer-events: none;
-        }
-        @keyframes mmNotary {
-          0% { transform: scale(0.75); opacity: 0; }
-          45% { opacity: 1; }
-          100% { transform: scale(1.18); opacity: 0; }
         }
 
         .mm-ink{
@@ -674,21 +723,12 @@ export default function OathPage() {
           100% { opacity: 1; transform: translateY(0) rotate(-6deg) scale(1); }
         }
 
-        /* ====== review progress scan ====== */
         @keyframes mmScan {
           0% { transform: translateX(-60%); opacity: 0.2; }
           20% { opacity: 0.9; }
           100% { transform: translateX(260%); opacity: 0.25; }
         }
         .mm-scan { animation: mmScan 900ms ease-in-out infinite; }
-
-        /* ====== granted flash ====== */
-        .mm-flash{ animation: mmFlash 240ms ease-out both; }
-        @keyframes mmFlash{
-          0%{ opacity: 0; }
-          30%{ opacity: 0.35; }
-          100%{ opacity: 0; }
-        }
 
         .mm-cleared {
           color: rgba(134, 239, 172, 0.92);
@@ -699,68 +739,6 @@ export default function OathPage() {
           0% { text-shadow: 0 0 0 rgba(34, 197, 94, 0); filter: brightness(1); }
           60% { text-shadow: 0 0 14px rgba(34, 197, 94, 0.28); }
           100% { text-shadow: 0 0 22px rgba(34, 197, 94, 0.42); filter: brightness(1.08); }
-        }
-
-        /* ====== stamper + filed (same as your previous, retained) ====== */
-        .mm-stamper{
-          position: absolute;
-          top: -14px;
-          left: 50%;
-          width: 120px;
-          height: 120px;
-          transform: translateX(-50%) translateY(-88px) rotate(-8deg);
-          animation: mmSlam 720ms cubic-bezier(.2,.9,.2,1) both;
-          filter: drop-shadow(0 18px 30px rgba(0,0,0,0.55));
-          opacity: 0.95;
-          pointer-events: none;
-        }
-        .mm-stamper__top{
-          position:absolute;
-          left: 28px;
-          top: 6px;
-          width: 64px;
-          height: 40px;
-          border-radius: 18px 18px 12px 12px;
-          background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.02));
-          box-shadow: inset 0 -6px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.10);
-        }
-        .mm-stamper__base{
-          position:absolute;
-          left: 18px;
-          top: 44px;
-          width: 84px;
-          height: 62px;
-          border-radius: 16px;
-          background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
-          box-shadow: inset 0 -10px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(255,255,255,0.10);
-        }
-        @keyframes mmSlam{
-          0%{ transform: translateX(-50%) translateY(-104px) rotate(-10deg); }
-          70%{ transform: translateX(-50%) translateY(10px) rotate(-8deg); }
-          80%{ transform: translateX(-50%) translateY(2px) rotate(-8deg); }
-          100%{ transform: translateX(-50%) translateY(6px) rotate(-8deg); }
-        }
-        .mm-filed{
-          position: relative;
-          transform: rotate(-8deg);
-          opacity: 0;
-          animation: mmFiledIn 180ms ease-out 540ms forwards;
-          pointer-events: none;
-        }
-        .mm-filed__inner{
-          font-size: 13px;
-          letter-spacing: 0.34em;
-          text-transform: uppercase;
-          color: rgba(239, 68, 68, 0.78);
-          border: 2px solid rgba(239, 68, 68, 0.35);
-          padding: 10px 18px;
-          border-radius: 14px;
-          background: rgba(239, 68, 68, 0.07);
-          box-shadow: 0 0 22px rgba(239,68,68,0.12);
-        }
-        @keyframes mmFiledIn{
-          from{ opacity: 0; transform: rotate(-8deg) scale(0.98); }
-          to{ opacity: 1; transform: rotate(-8deg) scale(1); }
         }
       `}</style>
     </main>

@@ -126,18 +126,11 @@ export default async function ChallengesPage() {
 
   const challenges: Challenge[] = [
     {
-      id: "first-soldier",
-      title: "First Soldier",
-      subtitle: "First to reach 250 km",
-      thresholdKm: 250,
-      reward: 400,
-    },
-    {
       id: "first-area-don",
       title: "First Area Don",
       subtitle: "First to reach 500 km",
       thresholdKm: 500,
-      reward: 600,
+      reward: 500,
     },
   ];
 

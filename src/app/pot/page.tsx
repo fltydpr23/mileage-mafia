@@ -40,7 +40,7 @@ export default async function PotPage() {
       isoDate: "2026-02-02",
       title: "Penalty collected — Bribery (Disorderly conduct)",
       description:
-        "Two runners attempted bribery. Family penalty enforced and transferred to the penalty pool.",
+        "Two runners attempted bribery. Penalty enforced and transferred to the penalty pool.",
       kind: "penalty",
       amount: 1000,
       people: [
@@ -54,7 +54,7 @@ export default async function PotPage() {
       isoDate: "2099-01-01",
       title: "Upcoming payouts",
       description:
-        "Next payouts: ₹400 to first Soldier (250 km) and ₹600 to first Area Don (500 km). Auto-awarded when the sheet shows the threshold crossed.",
+        "Next payouts: ₹500 to first Area Don (500 km). Auto-awarded when the sheet shows the threshold crossed.",
       kind: "note",
       amount: 0,
     },

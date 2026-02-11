@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSheet } from "@/lib/sheets";
 import NowPlaying from "@/components/NowPlaying";
+import LeaderboardAudioBridge from "@/components/LeaderboardAudioBridge";
 import PotChip from "@/components/PotChip";
 
 export const dynamic = "force-dynamic";
@@ -318,19 +319,12 @@ export default async function LeaderboardPage() {
                   </p>
 
                   <div className="mt-4 grid grid-cols-2 gap-2">
-                    <div className="rounded-2xl bg-neutral-950/40 ring-1 ring-neutral-800 px-4 py-3">
-                      <p className="text-neutral-500 text-[10px] uppercase tracking-wider">
-                        First Soldier
-                      </p>
-                      <p className="mt-1 font-black tabular-nums">+{fmtINR(400)}</p>
-                      <p className="mt-1 text-neutral-600 text-xs">at 250 km</p>
-                    </div>
 
                     <div className="rounded-2xl bg-neutral-950/40 ring-1 ring-neutral-800 px-4 py-3">
                       <p className="text-neutral-500 text-[10px] uppercase tracking-wider">
                         First Area Don
                       </p>
-                      <p className="mt-1 font-black tabular-nums">+{fmtINR(600)}</p>
+                      <p className="mt-1 font-black tabular-nums">+{fmtINR(500)}</p>
                       <p className="mt-1 text-neutral-600 text-xs">at 500 km</p>
                     </div>
                   </div>
@@ -545,8 +539,9 @@ export default async function LeaderboardPage() {
           Next: weekly movers (▲▼) + streaks once Strava sync lands.
         </p>
       </div>
-
-      <NowPlaying />
+<LeaderboardAudioBridge />
+<NowPlaying />
+      
     </main>
   );
 }
