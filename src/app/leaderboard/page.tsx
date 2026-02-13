@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { getSheet } from "@/lib/sheets";
-import NowPlaying from "@/components/NowPlaying";
-import LeaderboardAudioBridge from "@/components/LeaderboardAudioBridge";
 import PotChip from "@/components/PotChip";
+import NowPlaying from "@/components/NowPlaying";
+
+
 
 export const dynamic = "force-dynamic";
 
@@ -539,9 +540,11 @@ export default async function LeaderboardPage() {
           Next: weekly movers (▲▼) + streaks once Strava sync lands.
         </p>
       </div>
-<LeaderboardAudioBridge />
-<NowPlaying />
-      
+      {/* Client-only audio widgets */}
+      <div>
+        
+        <NowPlaying />
+      </div>
     </main>
   );
 }

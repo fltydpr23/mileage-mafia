@@ -1,4 +1,3 @@
-// See full implementation in prompt.
 "use client";
 
 import React, {
@@ -52,6 +51,7 @@ type DebugState = {
   playing: boolean;
   unlocked: boolean;
   volume: number;
+  sfxMuted: boolean;
   ambience: {
     src: string;
     paused: boolean;
@@ -185,46 +185,10 @@ const FALLBACK_TRACK: Track = {
 
 // -----------------------------
 // IMPORTANT: Singleton audio elements
-// This prevents Next.js route transitions / hot reload from producing
-// multiple audio engines and “UI says playing but silent”.
+// Persist across route transitions/HMR (prevents multiple engines)
 // -----------------------------
 
-let __ambEl: HTMLAudioElement | null = null;
-let __musEl: HTMLAudioElement | null = null;
-let __elsReady = false;
 
-function makeAudioEl() {
-  const a = new Audio();
-  a.preload = "auto";
-  a.loop = true;
-  a.crossOrigin = "anonymous";
-  a.muted = false;
-  a.volume = 0; // we route volume ourselves
-
-  // iOS Safari hints (TS-safe)
-  try {
-    (a as any).playsInline = true;
-    a.setAttribute("playsinline", "true");
-    a.setAttribute("webkit-playsinline", "true");
-  } catch {}
-
-  return a;
-}
-
-function getOrCreateEls() {
-  if (!__ambEl) {
-    __ambEl = makeAudioEl();
-    __ambEl.src = AMBIENCE_TRACK.src;
-    __ambEl.loop = true;
-  }
-  if (!__musEl) {
-    __musEl = makeAudioEl();
-    __musEl.src = MUSIC_PLAYLIST[0]?.src ?? "";
-    __musEl.loop = true;
-  }
-  __elsReady = true;
-  return { amb: __ambEl, mus: __musEl };
-}
 
 // -----------------------------
 // Provider
@@ -264,6 +228,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const activeSfxRefs = useRef<AudioBufferSourceNode[]>([]);
 
   const [sfxMuted, setSfxMutedState] = useState(false);
+  const sfxMutedRef = useRef(false);
 
   // Persist SFX mute
   useEffect(() => {
@@ -273,75 +238,92 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, []);
 
+  useEffect(() => {
+    sfxMutedRef.current = sfxMuted;
+    const g = sfxGainRef.current;
+    if (g) g.gain.value = sfxMuted ? 0 : 1;
+  }, [sfxMuted]);
+
   const setSfxMuted = useCallback((v: boolean) => {
     const next = !!v;
     setSfxMutedState(next);
     try {
       localStorage.setItem("mm_sfx_muted", next ? "1" : "0");
     } catch {}
-    const g = sfxGainRef.current;
-    if (g) g.gain.value = next ? 0 : 1;
   }, []);
 
+  // ✅ FIXED: no recursion, no wrong type
   const toggleSfxMuted = useCallback(() => {
-    toggleSfxMuted();
+    setSfxMuted(!sfxMutedRef.current);
   }, [setSfxMuted]);
 
   // init singleton elements once
-  useEffect(() => {
-    const { amb, mus } = getOrCreateEls();
+  // Create audio elements once (client-safe)
+useEffect(() => {
+  if (typeof window === "undefined") return;
+
+  if (!ambienceRef.current) {
+    const amb = new Audio();
+    amb.preload = "auto";
+    amb.loop = true;
+    amb.crossOrigin = "anonymous";
+    amb.volume = 0;
+    amb.src = AMBIENCE_TRACK.src;
     ambienceRef.current = amb;
+  }
+
+  if (!musicRef.current) {
+    const mus = new Audio();
+    mus.preload = "auto";
+    mus.loop = true;
+    mus.crossOrigin = "anonymous";
+    mus.volume = 0;
+    mus.src = MUSIC_PLAYLIST[0]?.src ?? "";
     musicRef.current = mus;
+  }
 
-    // listeners on BOTH channels so UI never desyncs
-    const bind = (el: HTMLAudioElement, kind: AudioMode) => {
-      const onPlay = () => {
-        if (modeRef.current === kind) setPlaying(true);
-      };
-      const onPause = () => {
-        if (modeRef.current === kind) setPlaying(false);
-      };
-      const onTime = () => {
-        if (modeRef.current !== kind) return;
-        setCurrentTime(Number.isFinite(el.currentTime) ? el.currentTime : 0);
-      };
-      const onMeta = () => {
-        if (modeRef.current !== kind) return;
-        setDuration(Number.isFinite(el.duration) ? el.duration : 0);
-      };
-      const onEnded = () => {
-        if (modeRef.current === kind) setPlaying(false);
-      };
+  const amb = ambienceRef.current!;
+  const mus = musicRef.current!;
 
-      el.addEventListener("play", onPlay);
-      el.addEventListener("pause", onPause);
-      el.addEventListener("timeupdate", onTime);
-      el.addEventListener("loadedmetadata", onMeta);
-      el.addEventListener("durationchange", onMeta);
-      el.addEventListener("ended", onEnded);
-
-      return () => {
-        el.removeEventListener("play", onPlay);
-        el.removeEventListener("pause", onPause);
-        el.removeEventListener("timeupdate", onTime);
-        el.removeEventListener("loadedmetadata", onMeta);
-        el.removeEventListener("durationchange", onMeta);
-        el.removeEventListener("ended", onEnded);
-      };
+  const bind = (el: HTMLAudioElement, kind: AudioMode) => {
+    const onPlay = () => {
+      if (modeRef.current === kind) setPlaying(true);
+    };
+    const onPause = () => {
+      if (modeRef.current === kind) setPlaying(false);
+    };
+    const onTime = () => {
+      if (modeRef.current !== kind) return;
+      setCurrentTime(el.currentTime || 0);
+    };
+    const onMeta = () => {
+      if (modeRef.current !== kind) return;
+      setDuration(el.duration || 0);
     };
 
-    const unbindAmb = bind(amb, "ambience");
-    const unbindMus = bind(mus, "music");
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    el.addEventListener("timeupdate", onTime);
+    el.addEventListener("loadedmetadata", onMeta);
+    el.addEventListener("durationchange", onMeta);
 
     return () => {
-      // do NOT pause/stop on unmount (layout should persist)
-      // only unbind listeners
-      try {
-        unbindAmb();
-        unbindMus();
-      } catch {}
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPause);
+      el.removeEventListener("timeupdate", onTime);
+      el.removeEventListener("loadedmetadata", onMeta);
+      el.removeEventListener("durationchange", onMeta);
     };
-  }, []);
+  };
+
+  const unbindAmb = bind(amb, "ambience");
+  const unbindMus = bind(mus, "music");
+
+  return () => {
+    unbindAmb();
+    unbindMus();
+  };
+}, []);
 
   // keep refs synced
   useEffect(() => {
@@ -392,6 +374,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       if (a) {
         setCurrentTime(Number.isFinite(a.currentTime) ? a.currentTime : 0);
         setDuration(Number.isFinite(a.duration) ? a.duration : 0);
+        setPlaying(!a.paused);
       }
     } else {
       const t = MUSIC_PLAYLIST[musicIndex] ?? FALLBACK_TRACK;
@@ -400,6 +383,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       if (a) {
         setCurrentTime(Number.isFinite(a.currentTime) ? a.currentTime : 0);
         setDuration(Number.isFinite(a.duration) ? a.duration : 0);
+        setPlaying(!a.paused);
       }
     }
   }, [mode, musicIndex]);
@@ -490,7 +474,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
     const opId = ++opIdRef.current;
 
-    // routing first
+    // route first (ensures music becomes silent)
     setForeground("ambience");
 
     if (amb.src !== AMBIENCE_TRACK.src) {
@@ -541,7 +525,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         } catch {}
       }
 
-      // routing first
+      // route first (ensures ambience becomes silent)
       setForeground("music");
 
       applyVolumes();
@@ -597,13 +581,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     master.connect(ctx.destination);
 
     const sfxGain = ctx.createGain();
-    sfxGain.gain.value = sfxMuted ? 0 : 1;
+    sfxGain.gain.value = sfxMutedRef.current ? 0 : 1;
     sfxGain.connect(master);
 
     ctxRef.current = ctx;
     masterGainRef.current = master;
     sfxGainRef.current = sfxGain;
-  }, [sfxMuted]);
+  }, []);
 
   const unlock = useCallback(async () => {
     await ensureCtx();
@@ -632,7 +616,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const prime = async (a: HTMLAudioElement | null) => {
       if (!a) return;
       try {
-        // TS-safe (playsInline is not in lib.dom.d.ts)
         (a as any).playsInline = true;
         a.setAttribute("playsinline", "true");
         a.setAttribute("webkit-playsinline", "true");
@@ -647,6 +630,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         await a.play();
         a.pause();
       } catch {
+        // ignore (needs user gesture in some cases)
       } finally {
         try {
           a.volume = prevVol;
@@ -664,12 +648,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   // ===== recover: fixes “shows playing but silent” =====
   const recover = useCallback(async () => {
-    // Best effort: re-unlock (requires gesture on iOS)
     try {
       await unlock();
     } catch {}
 
-    // Ensure routing is correct
     applyVolumes();
 
     const a = getActiveEl();
@@ -722,7 +704,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const sfx = useCallback(
     (name: SfxName, opts?: SfxOptions) => {
-      if (sfxMuted) return;
+      if (sfxMutedRef.current) return;
 
       const ctx = ctxRef.current;
       const out = sfxGainRef.current;
@@ -776,7 +758,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         src.start(0);
       } catch {}
     },
-    [fetchBuffer, sfxMuted]
+    [fetchBuffer]
   );
 
   // Cleanup WebAudio only
@@ -803,6 +785,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       playing,
       unlocked,
       volume: volumeRef.current,
+      sfxMuted: sfxMutedRef.current,
       ambience: amb
         ? {
             src: amb.src,
