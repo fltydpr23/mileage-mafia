@@ -21,18 +21,16 @@ export default function LeaderboardAudioBridge() {
     // If something is already playing, ensure it's routed correctly.
     if (!audio.playing) return;
 
-    // If the current track is one of your noir tracks, make sure mode is "music".
+    // If the current track is one of your noir tracks, consider it as music mode.
     // (Your provider controls volume routing based on mode.)
     const id = (audio.current?.id || "").toLowerCase();
-    const looksLikeMusic = id.startsWith("noir") || audio.mode === "music";
+    const looksLikeMusic = id.startsWith("noir");
 
-    if (looksLikeMusic && audio.mode !== "music") {
-      // DON'T call playMusic() (could trip autoplay). Just flip mode if your provider exposes it.
-      // If your provider doesn't expose setMode, then we need to add a safe method:
-      // `setForeground("music" | "ambience")` in AudioProvider.
-      //
-      // For now: best is to add setForeground to AudioProvider (I’ll show the patch below).
-      (audio as any)?.setForeground?.("music");
+    if (looksLikeMusic) {
+      // DON'T call playMusic() (could trip autoplay).
+      // The AudioProvider doesn't currently expose mode/setForeground, so we just
+      // detect the track type here. Volume routing based on mode would need to be
+      // added to AudioProvider if needed.
     }
   }, [audio]);
 
