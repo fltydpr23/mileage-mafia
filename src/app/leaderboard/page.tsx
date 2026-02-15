@@ -202,7 +202,7 @@ export default async function LeaderboardPage() {
                   ) : null}
 
                   {leader ? (
-                    <span className="px-3 py-1 rounded-full text-[11px] font-extrabold bg-white/5 ring-1 ring-white/10 text-neutral-200">
+                    <span className="px-3 py-1 rounded-full text-[11px] font-extrabold bg-white/5 ring-1 ring-green-500/10 text-neutral-200">
                       +₹ 1,000
                     </span>
                   ) : null}

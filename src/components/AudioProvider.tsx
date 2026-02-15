@@ -10,111 +10,39 @@ import React, {
   useState,
 } from "react";
 
-// -----------------------------
-// Types
-// -----------------------------
-
 type Track = {
   id: string;
   title: string;
   artist?: string;
   src: string;
   loop?: boolean;
-  artwork?: string;
-};
-
-type SfxName =
-  | "tap"
-  | "beep"
-  | "deny"
-  | "latch"
-  | "doorSlide"
-  | "paper"
-  | "ink"
-  | "stamp"
-  | "scan"
-  | "type";
-
-type SfxOptions = {
-  volume?: number; // 0..1
-  rate?: number;
-  detune?: number;
-  randomRate?: [number, number];
-  randomDetune?: [number, number];
-  interrupt?: boolean;
-};
-
-type AudioMode = "ambience" | "music";
-
-type DebugState = {
-  mode: AudioMode;
-  playing: boolean;
-  unlocked: boolean;
-  volume: number;
-  sfxMuted: boolean;
-  ambience: {
-    src: string;
-    paused: boolean;
-    muted: boolean;
-    volume: number;
-    currentTime: number;
-    readyState: number;
-  } | null;
-  music: {
-    src: string;
-    paused: boolean;
-    muted: boolean;
-    volume: number;
-    currentTime: number;
-    readyState: number;
-  } | null;
 };
 
 type AudioApi = {
-  // UI
+  // UI state
   playing: boolean;
-  mode: AudioMode;
-  current: Track; // always defined
+  unlocked: boolean;
+  current: Track;
   currentTime: number;
   duration: number;
-  volume: number; // 0..1
-  unlocked: boolean;
+  volume: number;
 
-  // Foreground routing (NO play calls)
-  setForeground: (m: AudioMode) => void;
-
-  // Controls
+  // controls
   setVolume: (v: number) => void;
   seek: (sec: number) => void;
 
-  // Playback
-  play: () => Promise<void>; // alias playMusic()
-  playAmbience: () => Promise<void>;
   playMusic: (startIndex?: number) => Promise<void>;
   pause: () => void;
-  stop: () => void;
+  toggle: () => void;
   next: () => void;
   prev: () => void;
-  toggle: () => void;
 
-  // Policy/unlock + reliability
+  // browser policy helpers
   unlock: () => Promise<void>;
   recover: () => Promise<void>;
-  getDebug: () => DebugState;
-
-  // SFX
-  sfx: (name: SfxName, opts?: SfxOptions) => void;
-  preloadSfx: () => Promise<void>;
-  sfxMuted: boolean;
-  setSfxMuted: (v: boolean) => void;
-  toggleSfxMuted: () => void;
 };
 
 const AudioContextX = createContext<AudioApi | null>(null);
-
-// -----------------------------
-// Helpers
-// -----------------------------
 
 function clamp01(n: number) {
   return Math.max(0, Math.min(1, n));
@@ -122,58 +50,12 @@ function clamp01(n: number) {
 function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
 }
-function randRange([a, b]: [number, number]) {
-  return a + Math.random() * (b - a);
-}
-
-// -----------------------------
-// Tracks
-// -----------------------------
-
-const AMBIENCE_TRACK: Track = {
-  id: "ambience",
-  title: "Running Ambience",
-  artist: "Mileage Mafia",
-  src: "/audio/footsteps.mp3",
-  loop: true,
-};
 
 const MUSIC_PLAYLIST: Track[] = [
-  {
-    id: "noir1",
-    title: "Katana Zero (OST)",
-    artist: "LudoWic",
-    src: "/audio/noir1.mp3",
-    loop: true,
-  },
-  {
-    id: "noir2",
-    title: "Voyager",
-    artist: "Jasper Byrne",
-    src: "/audio/noir2.mp3",
-    loop: true,
-  },
-  {
-    id: "noir3",
-    title: "Spoiler",
-    artist: "Hyper",
-    src: "/audio/noir3.mp3",
-    loop: true,
-  },
+  { id: "noir1", title: "Katana Zero (OST)", artist: "LudoWic", src: "/audio/noir1.mp3", loop: true },
+  { id: "noir2", title: "Voyager", artist: "Jasper Byrne", src: "/audio/noir2.mp3", loop: true },
+  { id: "noir3", title: "Spoiler", artist: "Hyper", src: "/audio/noir3.mp3", loop: true },
 ];
-
-const SFX_MAP: Record<SfxName, string> = {
-  tap: "/sfx/tap.mp3",
-  beep: "/sfx/beep.mp3",
-  deny: "/sfx/deny.mp3",
-  latch: "/sfx/latch.mp3",
-  doorSlide: "/sfx/door-slide.mp3",
-  paper: "/sfx/paper.mp3",
-  ink: "/sfx/ink.mp3",
-  stamp: "/sfx/stamp.mp3",
-  scan: "/sfx/scan.mp3",
-  type: "/sfx/type.mp3",
-};
 
 const FALLBACK_TRACK: Track = {
   id: "none",
@@ -183,25 +65,30 @@ const FALLBACK_TRACK: Track = {
   loop: true,
 };
 
-// -----------------------------
-// IMPORTANT: Singleton audio elements
-// Persist across route transitions/HMR (prevents multiple engines)
-// -----------------------------
+// ---- singleton audio element across route changes / HMR ----
+function getSingletonAudio(): HTMLAudioElement {
+  const g = globalThis as any;
 
+  if (g.__mm_noir_audio_el) return g.__mm_noir_audio_el as HTMLAudioElement;
 
+  const a = new Audio();
+  a.preload = "auto";
+  a.crossOrigin = "anonymous";
+  a.loop = true;
 
-// -----------------------------
-// Provider
-// -----------------------------
+  // iOS Safari hints (TS-safe)
+  try {
+    (a as any).playsInline = true;
+    a.setAttribute("playsinline", "true");
+    a.setAttribute("webkit-playsinline", "true");
+  } catch {}
+
+  g.__mm_noir_audio_el = a;
+  return a;
+}
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
-  // refs into the singletons
-  const ambienceRef = useRef<HTMLAudioElement | null>(null);
-  const musicRef = useRef<HTMLAudioElement | null>(null);
-
-  // authoritative intent
-  const [mode, setMode] = useState<AudioMode>("ambience");
-  const modeRef = useRef<AudioMode>("ambience");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [musicIndex, setMusicIndex] = useState(0);
   const musicIndexRef = useRef(0);
@@ -209,296 +96,105 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [volume, setVolumeState] = useState(0.9);
   const volumeRef = useRef(0.9);
 
-  // UI state
   const [playing, setPlaying] = useState(false);
-  const [current, setCurrent] = useState<Track>(FALLBACK_TRACK);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [unlocked, setUnlocked] = useState(false);
 
-  // guard async plays (latest wins)
+  const [current, setCurrent] = useState<Track>(MUSIC_PLAYLIST[0] ?? FALLBACK_TRACK);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  // cancel/guard async play calls
   const opIdRef = useRef(0);
 
-  // --------- WebAudio for SFX ---------
-  const ctxRef = useRef<AudioContext | null>(null);
-  const masterGainRef = useRef<GainNode | null>(null);
-  const sfxGainRef = useRef<GainNode | null>(null);
-  const buffersRef = useRef<Partial<Record<SfxName, AudioBuffer>>>({});
-  const preloadPromiseRef = useRef<Promise<void> | null>(null);
-  const activeSfxRefs = useRef<AudioBufferSourceNode[]>([]);
-
-  const [sfxMuted, setSfxMutedState] = useState(false);
-  const sfxMutedRef = useRef(false);
-
-  // Persist SFX mute
+  // init + listeners once
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("mm_sfx_muted");
-      if (saved === "1") setSfxMutedState(true);
-    } catch {}
-  }, []);
+    if (typeof window === "undefined") return;
 
-  useEffect(() => {
-    sfxMutedRef.current = sfxMuted;
-    const g = sfxGainRef.current;
-    if (g) g.gain.value = sfxMuted ? 0 : 1;
-  }, [sfxMuted]);
+    const a = getSingletonAudio();
+    audioRef.current = a;
 
-  const setSfxMuted = useCallback((v: boolean) => {
-    const next = !!v;
-    setSfxMutedState(next);
-    try {
-      localStorage.setItem("mm_sfx_muted", next ? "1" : "0");
-    } catch {}
-  }, []);
+    // ensure track is set
+    const t = MUSIC_PLAYLIST[musicIndexRef.current] ?? MUSIC_PLAYLIST[0];
+    if (t?.src && a.src !== t.src) {
+      a.src = t.src;
+      a.loop = t.loop !== false;
+      try {
+        a.load();
+      } catch {}
+    }
 
-  // ✅ FIXED: no recursion, no wrong type
-  const toggleSfxMuted = useCallback(() => {
-    setSfxMuted(!sfxMutedRef.current);
-  }, [setSfxMuted]);
+    // apply volume
+    a.volume = clamp01(volumeRef.current);
 
-  // init singleton elements once
-  // Create audio elements once (client-safe)
-useEffect(() => {
-  if (typeof window === "undefined") return;
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onTime = () => setCurrentTime(Number.isFinite(a.currentTime) ? a.currentTime : 0);
+    const onMeta = () => setDuration(Number.isFinite(a.duration) ? a.duration : 0);
 
-  if (!ambienceRef.current) {
-    const amb = new Audio();
-    amb.preload = "auto";
-    amb.loop = true;
-    amb.crossOrigin = "anonymous";
-    amb.volume = 0;
-    amb.src = AMBIENCE_TRACK.src;
-    ambienceRef.current = amb;
-  }
+    a.addEventListener("play", onPlay);
+    a.addEventListener("pause", onPause);
+    a.addEventListener("timeupdate", onTime);
+    a.addEventListener("loadedmetadata", onMeta);
+    a.addEventListener("durationchange", onMeta);
 
-  if (!musicRef.current) {
-    const mus = new Audio();
-    mus.preload = "auto";
-    mus.loop = true;
-    mus.crossOrigin = "anonymous";
-    mus.volume = 0;
-    mus.src = MUSIC_PLAYLIST[0]?.src ?? "";
-    musicRef.current = mus;
-  }
-
-  const amb = ambienceRef.current!;
-  const mus = musicRef.current!;
-
-  const bind = (el: HTMLAudioElement, kind: AudioMode) => {
-    const onPlay = () => {
-      if (modeRef.current === kind) setPlaying(true);
-    };
-    const onPause = () => {
-      if (modeRef.current === kind) setPlaying(false);
-    };
-    const onTime = () => {
-      if (modeRef.current !== kind) return;
-      setCurrentTime(el.currentTime || 0);
-    };
-    const onMeta = () => {
-      if (modeRef.current !== kind) return;
-      setDuration(el.duration || 0);
-    };
-
-    el.addEventListener("play", onPlay);
-    el.addEventListener("pause", onPause);
-    el.addEventListener("timeupdate", onTime);
-    el.addEventListener("loadedmetadata", onMeta);
-    el.addEventListener("durationchange", onMeta);
+    // sync initial UI
+    setPlaying(!a.paused);
+    setCurrentTime(Number.isFinite(a.currentTime) ? a.currentTime : 0);
+    setDuration(Number.isFinite(a.duration) ? a.duration : 0);
 
     return () => {
-      el.removeEventListener("play", onPlay);
-      el.removeEventListener("pause", onPause);
-      el.removeEventListener("timeupdate", onTime);
-      el.removeEventListener("loadedmetadata", onMeta);
-      el.removeEventListener("durationchange", onMeta);
+      a.removeEventListener("play", onPlay);
+      a.removeEventListener("pause", onPause);
+      a.removeEventListener("timeupdate", onTime);
+      a.removeEventListener("loadedmetadata", onMeta);
+      a.removeEventListener("durationchange", onMeta);
+      // IMPORTANT: do NOT pause here (we want it to continue across route changes)
     };
-  };
+  }, []);
 
-  const unbindAmb = bind(amb, "ambience");
-  const unbindMus = bind(mus, "music");
-
-  return () => {
-    unbindAmb();
-    unbindMus();
-  };
-}, []);
-
-  // keep refs synced
-  useEffect(() => {
-    modeRef.current = mode;
-  }, [mode]);
   useEffect(() => {
     musicIndexRef.current = musicIndex;
+    setCurrent(MUSIC_PLAYLIST[musicIndex] ?? FALLBACK_TRACK);
   }, [musicIndex]);
+
   useEffect(() => {
     volumeRef.current = volume;
+    const a = audioRef.current;
+    if (a) a.volume = clamp01(volume);
   }, [volume]);
-
-  const getActiveEl = useCallback(() => {
-    return modeRef.current === "music" ? musicRef.current : ambienceRef.current;
-  }, []);
-
-  // apply routing volumes: active = master volume, inactive = 0
-  const applyVolumes = useCallback(() => {
-    const amb = ambienceRef.current;
-    const mus = musicRef.current;
-    if (!amb || !mus) return;
-
-    const v = clamp01(volumeRef.current);
-
-    try {
-      amb.muted = false;
-      mus.muted = false;
-    } catch {}
-
-    if (modeRef.current === "ambience") {
-      amb.volume = v;
-      mus.volume = 0;
-    } else {
-      mus.volume = v;
-      amb.volume = 0;
-    }
-  }, []);
-
-  useEffect(() => {
-    applyVolumes();
-  }, [applyVolumes, mode, volume]);
-
-  // keep UI “current track” consistent with intent
-  useEffect(() => {
-    if (mode === "ambience") {
-      setCurrent(AMBIENCE_TRACK);
-      const a = ambienceRef.current;
-      if (a) {
-        setCurrentTime(Number.isFinite(a.currentTime) ? a.currentTime : 0);
-        setDuration(Number.isFinite(a.duration) ? a.duration : 0);
-        setPlaying(!a.paused);
-      }
-    } else {
-      const t = MUSIC_PLAYLIST[musicIndex] ?? FALLBACK_TRACK;
-      setCurrent(t);
-      const a = musicRef.current;
-      if (a) {
-        setCurrentTime(Number.isFinite(a.currentTime) ? a.currentTime : 0);
-        setDuration(Number.isFinite(a.duration) ? a.duration : 0);
-        setPlaying(!a.paused);
-      }
-    }
-  }, [mode, musicIndex]);
-
-  // Foreground routing (NO play calls)
-  const setForeground = useCallback(
-    (m: AudioMode) => {
-      setMode(m);
-      modeRef.current = m;
-      applyVolumes();
-
-      const active = m === "music" ? musicRef.current : ambienceRef.current;
-      if (!active) return;
-
-      setPlaying(!active.paused);
-      setCurrentTime(Number.isFinite(active.currentTime) ? active.currentTime : 0);
-      setDuration(Number.isFinite(active.duration) ? active.duration : 0);
-    },
-    [applyVolumes]
-  );
 
   const setVolume = useCallback((v: number) => {
     setVolumeState(clamp01(v));
   }, []);
 
-  const seek = useCallback(
-    (sec: number) => {
-      const a = getActiveEl();
-      if (!a) return;
-      const d = Number.isFinite(a.duration) ? a.duration : 0;
-      const next = clamp(sec, 0, d || 0);
-      try {
-        a.currentTime = next;
-      } catch {}
-      setCurrentTime(next);
-    },
-    [getActiveEl]
-  );
-
-  const pause = useCallback(() => {
+  const seek = useCallback((sec: number) => {
+    const a = audioRef.current;
+    if (!a) return;
+    const d = Number.isFinite(a.duration) ? a.duration : 0;
+    const next = clamp(sec, 0, d || 0);
     try {
-      ambienceRef.current?.pause();
-      musicRef.current?.pause();
+      a.currentTime = next;
     } catch {}
-    setPlaying(false);
+    setCurrentTime(next);
   }, []);
 
-  const stop = useCallback(() => {
-    opIdRef.current += 1;
-    try {
-      const amb = ambienceRef.current;
-      const mus = musicRef.current;
-      if (amb) {
-        amb.pause();
-        amb.currentTime = 0;
-      }
-      if (mus) {
-        mus.pause();
-        mus.currentTime = 0;
-      }
-    } catch {}
-    setPlaying(false);
-    setCurrentTime(0);
-    setDuration(0);
-  }, []);
-
-  // internal guarded play
-  const guardedPlay = useCallback(async (el: HTMLAudioElement, opId: number) => {
+  const guardedPlay = useCallback(async (a: HTMLAudioElement, opId: number) => {
     if (opId !== opIdRef.current) return;
 
     try {
-      el.muted = false;
+      a.muted = false;
     } catch {}
 
-    try {
-      await el.play();
-    } catch {
-      throw new Error("Audio blocked");
-    }
-
+    await a.play(); // may throw if not user gesture
     if (opId !== opIdRef.current) return;
+
     setPlaying(true);
   }, []);
 
-  const playAmbience = useCallback(async () => {
-    const amb = ambienceRef.current;
-    if (!amb) return;
-
-    const opId = ++opIdRef.current;
-
-    // route first (ensures music becomes silent)
-    setForeground("ambience");
-
-    if (amb.src !== AMBIENCE_TRACK.src) {
-      try {
-        amb.pause();
-        amb.src = AMBIENCE_TRACK.src;
-        amb.loop = true;
-        amb.currentTime = 0;
-        try {
-          amb.load();
-        } catch {}
-      } catch {}
-    }
-
-    applyVolumes();
-    await guardedPlay(amb, opId);
-    setCurrent(AMBIENCE_TRACK);
-  }, [applyVolumes, guardedPlay, setForeground]);
-
   const playMusic = useCallback(
     async (startIndex?: number) => {
-      if (!MUSIC_PLAYLIST.length) return;
-      const mus = musicRef.current;
-      if (!mus) return;
+      const a = audioRef.current;
+      if (!a || MUSIC_PLAYLIST.length === 0) return;
 
       const opId = ++opIdRef.current;
 
@@ -512,47 +208,39 @@ useEffect(() => {
 
       setMusicIndex(idx);
       musicIndexRef.current = idx;
+      setCurrent(t);
 
-      if (mus.src !== t.src) {
+      if (a.src !== t.src) {
         try {
-          mus.pause();
-          mus.src = t.src;
-          mus.loop = t.loop !== false;
-          mus.currentTime = 0;
-          try {
-            mus.load();
-          } catch {}
+          a.pause();
+        } catch {}
+        a.src = t.src;
+        a.loop = t.loop !== false;
+        try {
+          a.load();
         } catch {}
       }
 
-      // route first (ensures ambience becomes silent)
-      setForeground("music");
+      a.volume = clamp01(volumeRef.current);
+      await guardedPlay(a, opId);
 
-      applyVolumes();
-      await guardedPlay(mus, opId);
-      setCurrent(t);
+      setCurrentTime(Number.isFinite(a.currentTime) ? a.currentTime : 0);
+      setDuration(Number.isFinite(a.duration) ? a.duration : 0);
     },
-    [applyVolumes, guardedPlay, setForeground]
+    [guardedPlay]
   );
 
-  const play = useCallback(async () => {
-    await playMusic();
-  }, [playMusic]);
-
-  const next = useCallback(() => {
-    if (!MUSIC_PLAYLIST.length) return;
-    const nextIdx = (musicIndexRef.current + 1) % MUSIC_PLAYLIST.length;
-    void playMusic(nextIdx);
-  }, [playMusic]);
-
-  const prev = useCallback(() => {
-    if (!MUSIC_PLAYLIST.length) return;
-    const prevIdx = (musicIndexRef.current - 1 + MUSIC_PLAYLIST.length) % MUSIC_PLAYLIST.length;
-    void playMusic(prevIdx);
-  }, [playMusic]);
+  const pause = useCallback(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    try {
+      a.pause();
+    } catch {}
+    setPlaying(false);
+  }, []);
 
   const toggle = useCallback(() => {
-    const a = getActiveEl();
+    const a = audioRef.current;
     if (!a) return;
 
     if (!a.paused) {
@@ -564,313 +252,95 @@ useEffect(() => {
     }
 
     const opId = ++opIdRef.current;
-    applyVolumes();
+    a.volume = clamp01(volumeRef.current);
     void guardedPlay(a, opId).catch(() => {});
-  }, [applyVolumes, guardedPlay, getActiveEl]);
+  }, [guardedPlay]);
 
-  // ===== iOS unlock for WebAudio + both HTMLAudioElements =====
-  const ensureCtx = useCallback(async () => {
-    if (ctxRef.current && masterGainRef.current && sfxGainRef.current) return;
+  const next = useCallback(() => {
+    if (!MUSIC_PLAYLIST.length) return;
+    const idx = (musicIndexRef.current + 1) % MUSIC_PLAYLIST.length;
+    void playMusic(idx);
+  }, [playMusic]);
 
-    const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined;
-    if (!Ctx) return;
+  const prev = useCallback(() => {
+    if (!MUSIC_PLAYLIST.length) return;
+    const idx = (musicIndexRef.current - 1 + MUSIC_PLAYLIST.length) % MUSIC_PLAYLIST.length;
+    void playMusic(idx);
+  }, [playMusic]);
 
-    const ctx = new Ctx();
-    const master = ctx.createGain();
-    master.gain.value = 1;
-    master.connect(ctx.destination);
-
-    const sfxGain = ctx.createGain();
-    sfxGain.gain.value = sfxMutedRef.current ? 0 : 1;
-    sfxGain.connect(master);
-
-    ctxRef.current = ctx;
-    masterGainRef.current = master;
-    sfxGainRef.current = sfxGain;
-  }, []);
-
+  // unlock must be called from a user gesture (button click)
   const unlock = useCallback(async () => {
-    await ensureCtx();
+    const a = audioRef.current;
+    if (!a) return;
 
-    const ctx = ctxRef.current;
-    if (ctx && ctx.state !== "running") {
+    try {
+      (a as any).playsInline = true;
+      a.setAttribute("playsinline", "true");
+      a.setAttribute("webkit-playsinline", "true");
+    } catch {}
+
+    const prevVol = a.volume;
+    const prevMuted = a.muted;
+
+    try {
+      a.muted = false;
+      a.volume = 0;
+      await a.play();
+      a.pause();
+    } catch {
+      // if it throws, it still usually “primes” on some browsers,
+      // but true unlock requires the gesture anyway.
+    } finally {
       try {
-        await ctx.resume();
+        a.volume = prevVol;
+        a.muted = prevMuted;
       } catch {}
     }
 
-    // prime WebAudio
-    try {
-      const c = ctxRef.current;
-      const g = sfxGainRef.current;
-      if (c && g) {
-        const buf = c.createBuffer(1, 1, c.sampleRate);
-        const src = c.createBufferSource();
-        src.buffer = buf;
-        src.connect(g);
-        src.start(0);
-      }
-    } catch {}
-
-    // prime BOTH HTMLAudio elements (gesture-authorize)
-    const prime = async (a: HTMLAudioElement | null) => {
-      if (!a) return;
-      try {
-        (a as any).playsInline = true;
-        a.setAttribute("playsinline", "true");
-        a.setAttribute("webkit-playsinline", "true");
-      } catch {}
-
-      const prevVol = a.volume;
-      const prevMuted = a.muted;
-
-      try {
-        a.muted = false;
-        a.volume = 0;
-        await a.play();
-        a.pause();
-      } catch {
-        // ignore (needs user gesture in some cases)
-      } finally {
-        try {
-          a.volume = prevVol;
-          a.muted = prevMuted;
-        } catch {}
-      }
-    };
-
-    await prime(ambienceRef.current);
-    await prime(musicRef.current);
-
-    applyVolumes();
     setUnlocked(true);
-  }, [applyVolumes, ensureCtx]);
+  }, []);
 
-  // ===== recover: fixes “shows playing but silent” =====
   const recover = useCallback(async () => {
+    const a = audioRef.current;
+    if (!a) return;
+
+    // best effort
     try {
       await unlock();
     } catch {}
 
-    applyVolumes();
-
-    const a = getActiveEl();
-    if (!a) return;
-
-    // If UI says playing but element is paused, resume
+    // restore volume + resume if needed
+    a.volume = clamp01(volumeRef.current);
     if (playing && a.paused) {
       const opId = ++opIdRef.current;
       try {
         await guardedPlay(a, opId);
       } catch {}
-      return;
     }
-
-    // Re-apply again to break out of stuck volume/mute states
-    applyVolumes();
-  }, [applyVolumes, getActiveEl, guardedPlay, playing, unlock]);
-
-  // ----- SFX -----
-  const fetchBuffer = useCallback(async (url: string) => {
-    const ctx = ctxRef.current;
-    if (!ctx) return null;
-    const res = await fetch(url);
-    const arr = await res.arrayBuffer();
-    return await ctx.decodeAudioData(arr);
-  }, []);
-
-  const preloadSfx = useCallback(async () => {
-    if (preloadPromiseRef.current) return preloadPromiseRef.current;
-
-    preloadPromiseRef.current = (async () => {
-      await ensureCtx();
-      const ctx = ctxRef.current;
-      if (!ctx) return;
-
-      const entries = Object.entries(SFX_MAP) as Array<[SfxName, string]>;
-      await Promise.all(
-        entries.map(async ([name, url]) => {
-          try {
-            if (buffersRef.current[name]) return;
-            const b = await fetchBuffer(url);
-            if (b) buffersRef.current[name] = b;
-          } catch {}
-        })
-      );
-    })();
-
-    return preloadPromiseRef.current;
-  }, [ensureCtx, fetchBuffer]);
-
-  const sfx = useCallback(
-    (name: SfxName, opts?: SfxOptions) => {
-      if (sfxMutedRef.current) return;
-
-      const ctx = ctxRef.current;
-      const out = sfxGainRef.current;
-      if (!ctx || !out) return;
-      if (ctx.state !== "running") return;
-
-      const buf = buffersRef.current[name];
-      if (!buf) {
-        void (async () => {
-          try {
-            const b = await fetchBuffer(SFX_MAP[name]);
-            if (b) buffersRef.current[name] = b;
-          } catch {}
-        })();
-        return;
-      }
-
-      if (opts?.interrupt) {
-        try {
-          activeSfxRefs.current.forEach((n) => {
-            try {
-              n.stop(0);
-            } catch {}
-          });
-        } catch {}
-        activeSfxRefs.current = [];
-      }
-
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-
-      const g = ctx.createGain();
-      const vol = clamp01(opts?.volume ?? 0.85);
-
-      const rate = opts?.randomRate ? randRange(opts.randomRate) : opts?.rate ?? 1.0;
-      const detune = opts?.randomDetune ? randRange(opts.randomDetune) : opts?.detune ?? 0;
-
-      src.playbackRate.value = rate;
-      src.detune.value = detune;
-
-      g.gain.value = vol;
-      src.connect(g);
-      g.connect(out);
-
-      activeSfxRefs.current.push(src);
-      src.onended = () => {
-        activeSfxRefs.current = activeSfxRefs.current.filter((x) => x !== src);
-      };
-
-      try {
-        src.start(0);
-      } catch {}
-    },
-    [fetchBuffer]
-  );
-
-  // Cleanup WebAudio only
-  useEffect(() => {
-    return () => {
-      try {
-        ctxRef.current?.close();
-      } catch {}
-      ctxRef.current = null;
-      masterGainRef.current = null;
-      sfxGainRef.current = null;
-      buffersRef.current = {};
-      preloadPromiseRef.current = null;
-      activeSfxRefs.current = [];
-    };
-  }, []);
-
-  const getDebug = useCallback((): DebugState => {
-    const amb = ambienceRef.current;
-    const mus = musicRef.current;
-
-    return {
-      mode: modeRef.current,
-      playing,
-      unlocked,
-      volume: volumeRef.current,
-      sfxMuted: sfxMutedRef.current,
-      ambience: amb
-        ? {
-            src: amb.src,
-            paused: amb.paused,
-            muted: amb.muted,
-            volume: amb.volume,
-            currentTime: Number.isFinite(amb.currentTime) ? amb.currentTime : 0,
-            readyState: amb.readyState,
-          }
-        : null,
-      music: mus
-        ? {
-            src: mus.src,
-            paused: mus.paused,
-            muted: mus.muted,
-            volume: mus.volume,
-            currentTime: Number.isFinite(mus.currentTime) ? mus.currentTime : 0,
-            readyState: mus.readyState,
-          }
-        : null,
-    };
-  }, [playing, unlocked]);
+  }, [guardedPlay, playing, unlock]);
 
   const api = useMemo<AudioApi>(
     () => ({
       playing,
-      mode,
+      unlocked,
       current: current ?? FALLBACK_TRACK,
       currentTime,
       duration,
       volume,
-      unlocked,
-
-      setForeground,
 
       setVolume,
       seek,
 
-      play,
-      playAmbience,
       playMusic,
       pause,
-      stop,
+      toggle,
       next,
       prev,
-      toggle,
 
       unlock,
       recover,
-      getDebug,
-
-      sfx,
-      preloadSfx,
-      sfxMuted,
-      setSfxMuted,
-      toggleSfxMuted,
     }),
-    [
-      playing,
-      mode,
-      current,
-      currentTime,
-      duration,
-      volume,
-      unlocked,
-      setForeground,
-      setVolume,
-      seek,
-      play,
-      playAmbience,
-      playMusic,
-      pause,
-      stop,
-      next,
-      prev,
-      toggle,
-      unlock,
-      recover,
-      getDebug,
-      sfx,
-      preloadSfx,
-      sfxMuted,
-      setSfxMuted,
-      toggleSfxMuted,
-    ]
+    [playing, unlocked, current, currentTime, duration, volume, setVolume, seek, playMusic, pause, toggle, next, prev, unlock, recover]
   );
 
   return <AudioContextX.Provider value={api}>{children}</AudioContextX.Provider>;
@@ -881,4 +351,3 @@ export function useAudio() {
   if (!ctx) throw new Error("useAudio must be used within <AudioProvider>");
   return ctx;
 }
-

@@ -328,7 +328,7 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
   const minRequired = Math.round(annualTarget * 0.85);
   const kmToSafety = Math.max(0, minRequired - runner.yearlyKm);
 
-  const activeWeeks = weekly.length;
+  const activeWeeks = weekly.filter((w) => w.km > 0).length;
 
   // ✅ Avg weekly mileage (last 4 completed weeks)
   const last4Weeks = weekly.slice(-4);
@@ -533,7 +533,7 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
         {/* METRICS */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <Stat label="Weekly Target" value={weeklyTarget ? `${fmtKm(weeklyTarget)} km` : "—"} />
-          <Stat label="Active Weeks" value={String(activeWeeks)} />
+          <Stat label="Weeks Logged" value={String(activeWeeks)} />
           <Stat label="Avg KM (last 4 weeks)" value={`${fmtKm(avgLast4)} km`} sub="Mean of last 4 completed weeks" />
           <Stat label="🔥 Running Streak" value={`${runStreak} weeks`} />
           <Stat label="🎯 Target Hit Rate" value={weeklyTarget ? `${targetHitRate.toFixed(0)}%` : "—"} />

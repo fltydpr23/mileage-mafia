@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,8 +14,8 @@ function clsx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
 
-const STORAGE_POS = "mm_nowplaying_pos_v2";
-const STORAGE_MINI = "mm_nowplaying_mini_v2";
+const STORAGE_POS = "mm_nowplaying_pos_v3";
+const STORAGE_MINI = "mm_nowplaying_mini_v3";
 
 type Point = { x: number; y: number };
 
@@ -27,12 +26,11 @@ function clamp(n: number, lo: number, hi: number) {
 export default function NowPlaying() {
   const {
     playing,
-    mode,
+    unlocked,
     current,
     currentTime,
     duration,
     volume,
-    unlocked,
     toggle,
     next,
     prev,
@@ -40,14 +38,12 @@ export default function NowPlaying() {
     setVolume,
     unlock,
     recover,
-    pause,
     playMusic,
-    playAmbience,
   } = useAudio();
 
   // --- UI state ---
   const [mini, setMini] = useState(false);
-  const [switchBusy, setSwitchBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   // --- position (from bottom-right) ---
   const [pos, setPos] = useState<Point>({ x: 16, y: 16 });
@@ -55,9 +51,7 @@ export default function NowPlaying() {
   const pointerStartRef = useRef<Point>({ x: 0, y: 0 });
   const posStartRef = useRef<Point>({ x: 16, y: 16 });
 
-  const isNoir = mode === "music";
-
-  // Load persisted prefs (client-only)
+  // Load persisted prefs
   useEffect(() => {
     try {
       const savedMini = localStorage.getItem(STORAGE_MINI);
@@ -85,7 +79,7 @@ export default function NowPlaying() {
     } catch {}
   }, [pos]);
 
-  // Auto-collapse when the track changes (your requirement)
+  // Auto-collapse when track changes
   const lastTrackIdRef = useRef<string>("");
   useEffect(() => {
     const id = current?.id || "";
@@ -119,29 +113,23 @@ export default function NowPlaying() {
     [setVolume]
   );
 
-  // Hard switch: stop both, start the target channel.
-  // This is the cleanest way to prevent “ambience over noir”.
-  const hardSwitch = useCallback(
-    async (target: "music" | "ambience") => {
-      if (switchBusy) return;
-      setSwitchBusy(true);
+  // One-tap “make it play” (best effort)
+  const ensurePlay = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (!unlocked) await unlock();
+      await playMusic(); // plays current/last index
+    } catch {
       try {
-        if (!unlocked) await unlock();
-        pause();
-        if (target === "music") await playMusic();
-        else await playAmbience();
-      } catch {
-        try {
-          await recover();
-        } catch {}
-      } finally {
-        setSwitchBusy(false);
-      }
-    },
-    [switchBusy, unlocked, unlock, pause, playMusic, playAmbience, recover]
-  );
+        await recover();
+      } catch {}
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, unlocked, unlock, playMusic, recover]);
 
-  // --- drag handlers (safe; no window access unless actually dragging) ---
+  // --- drag handlers ---
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       if ((e as any).button != null && (e as any).button !== 0) return;
@@ -169,7 +157,7 @@ export default function NowPlaying() {
     const w = typeof window !== "undefined" ? window.innerWidth : 1000;
     const h = typeof window !== "undefined" ? window.innerHeight : 800;
 
-    // Keep on-screen with a conservative clamp
+    // Conservative clamp so it stays visible
     const maxX = Math.max(8, w - 120);
     const maxY = Math.max(8, h - 120);
 
@@ -177,13 +165,12 @@ export default function NowPlaying() {
       x: clamp(next.x, 8, maxX),
       y: clamp(next.y, 8, maxY),
     });
-  }, [setPos]);
+  }, []);
 
   const onPointerUp = useCallback(() => {
     draggingRef.current = false;
   }, []);
 
-  // Sizes
   const panelW = mini ? 260 : 380;
 
   return (
@@ -213,21 +200,12 @@ export default function NowPlaying() {
           <div className="flex items-center gap-2 min-w-0">
             <div className="h-2 w-2 rounded-full bg-emerald-400/80" />
             <div className="text-[10px] uppercase tracking-[0.28em] text-neutral-400 truncate">
-              Now Playing
+              Noir Radio
             </div>
-            <span
-              className={clsx(
-                "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-[0.24em]",
-                isNoir
-                  ? "bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-500/20"
-                  : "bg-white/5 text-neutral-300 ring-1 ring-white/10"
-              )}
-            >
-              {mode}
-            </span>
-            {switchBusy ? (
+
+            {busy ? (
               <span className="text-[10px] uppercase tracking-[0.22em] text-neutral-500">
-                switching…
+                working…
               </span>
             ) : null}
           </div>
@@ -269,7 +247,6 @@ export default function NowPlaying() {
             </div>
           </div>
 
-          {/* Mini */}
           {mini ? (
             <>
               <div className="mt-3">
@@ -284,15 +261,13 @@ export default function NowPlaying() {
 
               <div className="mt-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  {isNoir ? (
-                    <button
-                      onClick={() => void prev()}
-                      className="h-9 w-9 rounded-xl bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition"
-                      title="Previous"
-                    >
-                      ‹‹
-                    </button>
-                  ) : null}
+                  <button
+                    onClick={() => void prev()}
+                    className="h-9 w-9 rounded-xl bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition"
+                    title="Previous"
+                  >
+                    ‹‹
+                  </button>
 
                   <button
                     onClick={() => void toggle()}
@@ -302,63 +277,31 @@ export default function NowPlaying() {
                     {playing ? "❚❚" : "▶"}
                   </button>
 
-                  {isNoir ? (
-                    <button
-                      onClick={() => void next()}
-                      className="h-9 w-9 rounded-xl bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition"
-                      title="Next"
-                    >
-                      ››
-                    </button>
-                  ) : null}
+                  <button
+                    onClick={() => void next()}
+                    className="h-9 w-9 rounded-xl bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition"
+                    title="Next"
+                  >
+                    ››
+                  </button>
                 </div>
 
                 <button
-                  onClick={() => void hardSwitch(isNoir ? "ambience" : "music")}
-                  disabled={switchBusy}
+                  onClick={() => void ensurePlay()}
+                  disabled={busy}
                   className={clsx(
                     "px-3 py-2 rounded-xl text-xs font-extrabold uppercase tracking-[0.22em] transition",
                     "bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10",
-                    switchBusy ? "opacity-60 cursor-not-allowed" : ""
+                    busy ? "opacity-60 cursor-not-allowed" : ""
                   )}
-                  title="Switch channel"
+                  title="Force play (if browser blocked it)"
                 >
-                  {isNoir ? "Amb" : "Noir"}
+                  Start
                 </button>
               </div>
             </>
           ) : (
             <>
-              {/* Channel buttons */}
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => void hardSwitch("music")}
-                  disabled={switchBusy}
-                  className={clsx(
-                    "px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-[0.22em] transition",
-                    "ring-1 ring-neutral-800",
-                    isNoir ? "bg-white text-black" : "bg-white/5 text-neutral-200 hover:bg-white/10",
-                    switchBusy ? "opacity-60 cursor-not-allowed" : ""
-                  )}
-                >
-                  Noir Channel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void hardSwitch("ambience")}
-                  disabled={switchBusy}
-                  className={clsx(
-                    "px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-[0.22em] transition",
-                    "ring-1 ring-neutral-800",
-                    !isNoir ? "bg-white text-black" : "bg-white/5 text-neutral-200 hover:bg-white/10",
-                    switchBusy ? "opacity-60 cursor-not-allowed" : ""
-                  )}
-                >
-                  Ambience
-                </button>
-              </div>
-
               {/* Seek */}
               <div className="mt-4">
                 <div className="flex items-center justify-between text-[11px] text-neutral-500 tabular-nums">
@@ -372,10 +315,7 @@ export default function NowPlaying() {
                   min={0}
                   max={Math.max(0, duration || 0)}
                   step={0.1}
-                  value={Math.min(
-                    Math.max(0, currentTime || 0),
-                    Math.max(0, duration || 0)
-                  )}
+                  value={Math.min(Math.max(0, currentTime || 0), Math.max(0, duration || 0))}
                   onChange={onScrub}
                   className="mt-2 w-full accent-white"
                   disabled={!duration || duration <= 0}
@@ -389,17 +329,13 @@ export default function NowPlaying() {
               {/* Controls + volume */}
               <div className="mt-4 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  {isNoir ? (
-                    <button
-                      onClick={() => void prev()}
-                      className="h-9 w-9 rounded-xl bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition"
-                      title="Previous"
-                    >
-                      ‹‹
-                    </button>
-                  ) : (
-                    <div className="h-9 w-9" />
-                  )}
+                  <button
+                    onClick={() => void prev()}
+                    className="h-9 w-9 rounded-xl bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition"
+                    title="Previous"
+                  >
+                    ‹‹
+                  </button>
 
                   <button
                     onClick={() => void toggle()}
@@ -409,17 +345,13 @@ export default function NowPlaying() {
                     {playing ? "❚❚" : "▶"}
                   </button>
 
-                  {isNoir ? (
-                    <button
-                      onClick={() => void next()}
-                      className="h-9 w-9 rounded-xl bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition"
-                      title="Next"
-                    >
-                      ››
-                    </button>
-                  ) : (
-                    <div className="h-9 w-9" />
-                  )}
+                  <button
+                    onClick={() => void next()}
+                    className="h-9 w-9 rounded-xl bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10 transition"
+                    title="Next"
+                  >
+                    ››
+                  </button>
                 </div>
 
                 <div className="flex items-center gap-2 w-36">
@@ -442,6 +374,12 @@ export default function NowPlaying() {
               <div className="mt-3 text-[10px] uppercase tracking-[0.28em] text-neutral-600">
                 Drag from the top bar • Auto-collapses on track change
               </div>
+
+              {!unlocked ? (
+                <div className="mt-3 text-xs text-neutral-500">
+                  Audio is locked by your browser — hit <span className="text-neutral-200 font-semibold">Unlock</span>.
+                </div>
+              ) : null}
             </>
           )}
         </div>
@@ -449,4 +387,3 @@ export default function NowPlaying() {
     </div>
   );
 }
-
