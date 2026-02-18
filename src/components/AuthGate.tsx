@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { isAuthed } from "@/lib/auth";
 
@@ -11,26 +11,51 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
   const [ok, setOk] = useState(false);
 
+  // Public routes that should NEVER be gated (prevents redirect loops in incognito)
+  const isPublicRoute = useMemo(() => {
+    if (!pathname) return true;
+    return pathname === "/" || pathname === "/login";
+  }, [pathname]);
+
   useEffect(() => {
+    let alive = true;
+
     setMounted(true);
 
-    // Allow login page always
-    if (pathname === "/") {
-      setOk(true);
-      return;
+    // Always allow public routes
+    if (isPublicRoute) {
+      if (alive) setOk(true);
+      return () => {
+        alive = false;
+      };
     }
 
-    const authed = isAuthed(); // safe: runs only on client after mount
+    // Protected routes: check auth on client
+    const authed = isAuthed();
+    if (!alive) return () => {
+      alive = false;
+    };
+
     setOk(authed);
 
-    if (!authed) router.replace("/");
-  }, [pathname, router]);
+    // If not authed, send them to the password screen
+    if (!authed) {
+      router.replace("/");
+    }
 
-  // Prevent SSR/client mismatch
+    return () => {
+      alive = false;
+    };
+  }, [isPublicRoute, router, pathname]);
+
+  // Prevent SSR/client mismatch flashes
   if (!mounted) return null;
 
+  // Public routes are always visible
+  if (isPublicRoute) return <>{children}</>;
+
   // Block protected routes until auth is confirmed
-  if (pathname !== "/" && !ok) return null;
+  if (!ok) return null;
 
   return <>{children}</>;
 }
