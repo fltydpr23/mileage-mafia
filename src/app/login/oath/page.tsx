@@ -17,10 +17,6 @@ const ACCENT = {
   redText: "rgba(239, 68, 68, 0.86)",
 };
 
-function clamp01(n: number) {
-  return Math.max(0, Math.min(1, n));
-}
-
 export default function OathPage() {
   const router = useRouter();
   const audio = useAudio();
@@ -37,84 +33,6 @@ export default function OathPage() {
       router.replace("/login");
     }
   }, [router]);
-
-  // -------------------------
-  // Ambience control
-  // -------------------------
-  const startAmbience = useCallback(async () => {
-    try {
-      await (audio as any)?.playAmbience?.();
-    } catch {}
-  }, [audio]);
-
-  const stopMainTrack = useCallback(() => {
-    try {
-      (audio as any)?.stop?.();
-      (audio as any)?.pause?.();
-    } catch {}
-  }, [audio]);
-
-  // Keep ambience on this page
-  useEffect(() => {
-    void startAmbience();
-  }, [startAmbience]);
-
-  // -------------------------
-  // ✅ HARD FIX: Noir prewarm that ALWAYS works
-  // We keep a separate HTMLAudioElement playing at near-zero volume
-  // (started from a user gesture), then fade it up later.
-  // -------------------------
-  const noirElRef = useRef<HTMLAudioElement | null>(null);
-  const noirPrimedRef = useRef(false);
-
-  const ensureNoirElement = useCallback(() => {
-    if (noirElRef.current) return noirElRef.current;
-    const el = new Audio("/audio/noir1.mp3");
-    el.loop = true;
-    el.preload = "auto";
-    el.crossOrigin = "anonymous";
-    el.volume = 0; // start silent, we’ll set to 0.001 before play
-    noirElRef.current = el;
-    return el;
-  }, []);
-
-  const primeNoirFromGesture = useCallback(async () => {
-    if (noirPrimedRef.current) return;
-    noirPrimedRef.current = true;
-
-    // keep your provider unlock too (SFX, etc)
-    try {
-      await (audio as any)?.unlock?.();
-    } catch {}
-
-    const el = ensureNoirElement();
-
-    try {
-      // Important: Safari sometimes treats exactly 0 volume weirdly; use tiny non-zero.
-      el.volume = 0.001;
-      await el.play(); // MUST happen during gesture
-      // leave it running silently; do NOT pause it
-    } catch {
-      noirPrimedRef.current = false;
-    }
-  }, [audio, ensureNoirElement]);
-
-  const fadeNoirTo = useCallback((target: number, ms: number) => {
-    const el = noirElRef.current;
-    if (!el) return;
-
-    const start = el.volume;
-    const end = clamp01(target);
-    const t0 = performance.now();
-
-    const tick = (t: number) => {
-      const p = clamp01((t - t0) / ms);
-      el.volume = start + (end - start) * p;
-      if (p < 1) requestAnimationFrame(tick);
-    };
-
-    requestAnimationFrame(tick);
-  }, []);
 
   // -------------------------
   // REVIEW timers
@@ -158,27 +76,50 @@ export default function OathPage() {
     setChecks((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  const onSwear = useCallback(() => {
-    if (step !== "OATH") return;
-    if (!canSwear) return;
-
-    // clicking this is a user gesture: prime noir RIGHT HERE too
-    void primeNoirFromGesture();
-
-    setAuthed();
-    setReviewCleared(false);
-    setStep("REVIEW");
-  }, [canSwear, step, primeNoirFromGesture]);
-
   const goLedger = useCallback(() => router.push("/leaderboard"), [router]);
 
   const resetBackToDoor = useCallback(() => {
-    stopMainTrack();
     try {
       sessionStorage.removeItem("mm_pw_ok");
     } catch {}
     router.replace("/login");
-  }, [router, stopMainTrack]);
+  }, [router]);
+
+  // -------------------------
+  // ✅ Autoplay “prime” (gesture-safe)
+  // We DO NOT start audible music here.
+  // We just unlock + do a silent start/stop so GRANTED can start instantly.
+  // -------------------------
+  const primedRef = useRef(false);
+
+  const primeNoirFromGesture = useCallback(async () => {
+    if (primedRef.current) return;
+    primedRef.current = true;
+
+    try {
+      if (!audio.unlocked) await audio.unlock();
+    } catch {
+      primedRef.current = false;
+      return;
+    }
+
+    // Silent micro-prime: start then pause immediately, restore volume.
+    // This makes GRANTED play much more reliable on Safari without audible playback now.
+    try {
+      const prevVol = audio.volume;
+      audio.setVolume(0);
+      await audio.playMusic();
+      audio.pause();
+      audio.seek(0);
+      audio.setVolume(prevVol);
+    } catch {
+      try {
+        await audio.recover();
+      } catch {}
+      // allow retry if it failed
+      primedRef.current = false;
+    }
+  }, [audio]);
 
   // -------------------------
   // Stagger rules on first load
@@ -200,7 +141,10 @@ export default function OathPage() {
     const RULE_STAGGER_MS = 170;
 
     for (let i = 0; i < RULES.length; i++) {
-      const id = window.setTimeout(() => setRulesVisibleCount((v) => Math.max(v, i + 1)), START_DELAY_MS + i * RULE_STAGGER_MS);
+      const id = window.setTimeout(
+        () => setRulesVisibleCount((v) => Math.max(v, i + 1)),
+        START_DELAY_MS + i * RULE_STAGGER_MS
+      );
       ruleTimersRef.current.push(id);
     }
 
@@ -221,42 +165,43 @@ export default function OathPage() {
   }, [step]);
 
   // -------------------------
-  // GRANTED: Fade ambience down, fade noir up
+  // ✅ GRANTED: Start Noir IMMEDIATELY (NO FADE)
+  // Uses AudioProvider so NowPlaying shows correct progress.
   // -------------------------
-  const grantedFiredRef = useRef(false);
-  const [fadeDim, setFadeDim] = useState(false);
+  const grantedStartedRef = useRef(false);
 
   useEffect(() => {
     if (step !== "GRANTED") return;
+    if (grantedStartedRef.current) return;
+    grantedStartedRef.current = true;
 
-    // reset dim state each entry
-    setFadeDim(false);
+    (async () => {
+      try {
+        if (!audio.unlocked) await audio.unlock();
+        await audio.playMusic(); // ✅ instant start, no fades
+      } catch {
+        // If something blocks it, NowPlaying has Unlock/Start
+        try {
+          await audio.recover();
+        } catch {}
+      }
+    })();
+  }, [step, audio]);
 
-    if (grantedFiredRef.current) return;
-    grantedFiredRef.current = true;
+  // -------------------------
+  // Swear flow
+  // -------------------------
+  const onSwear = useCallback(() => {
+    if (step !== "OATH") return;
+    if (!canSwear) return;
 
-    // Start dim + fade timing
-    const DIM_IN_MS = 120;
-    const FADE_MS = 900;
+    // user gesture: prime autoplay right here
+    void primeNoirFromGesture();
 
-    const dimId = window.setTimeout(() => setFadeDim(true), DIM_IN_MS);
-
-    // Fade noir UP (it is already playing silently)
-    const noirUpId = window.setTimeout(() => {
-      fadeNoirTo(0.9, FADE_MS);
-    }, 220);
-
-    // Stop ambience a bit after noir fade begins (so we never need a new play() call)
-    const stopId = window.setTimeout(() => {
-      stopMainTrack();
-    }, 420);
-
-    return () => {
-      window.clearTimeout(dimId);
-      window.clearTimeout(noirUpId);
-      window.clearTimeout(stopId);
-    };
-  }, [step, fadeNoirTo, stopMainTrack]);
+    setAuthed();
+    setReviewCleared(false);
+    setStep("REVIEW");
+  }, [canSwear, step, primeNoirFromGesture]);
 
   // -------------------------
   // Hotkeys
@@ -327,7 +272,9 @@ export default function OathPage() {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] pointer-events-none" />
           <div className="relative w-[min(640px,92vw)] rounded-3xl bg-black/70 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_18px_70px_rgba(0,0,0,0.78)] overflow-hidden pointer-events-auto">
             <div className="px-10 py-9 text-center">
-              <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-500 mb-3">Case File Processing</div>
+              <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-500 mb-3">
+                Case File Processing
+              </div>
 
               <div
                 className="text-2xl md:text-3xl tracking-tight"
@@ -340,7 +287,9 @@ export default function OathPage() {
                 REVIEWING
               </div>
 
-              <div className="mt-3 text-neutral-400 text-sm">Articles verified. Signature cross-checked. Clearance being issued.</div>
+              <div className="mt-3 text-neutral-400 text-sm">
+                Articles verified. Signature cross-checked. Clearance being issued.
+              </div>
 
               <div className="mt-8 h-2 rounded-full bg-white/10 overflow-hidden">
                 <div className="h-full w-1/3 bg-white/35 mm-scan" />
@@ -348,23 +297,26 @@ export default function OathPage() {
 
               <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">
                 Status:{" "}
-                {reviewCleared ? <span className="mm-cleared font-semibold">CLEARED</span> : <span className="text-neutral-500">Reviewing</span>}
+                {reviewCleared ? (
+                  <span className="mm-cleared font-semibold">CLEARED</span>
+                ) : (
+                  <span className="text-neutral-500">Reviewing</span>
+                )}
               </div>
             </div>
           </div>
         </div>
       ) : null}
 
-      {/* GRANTED: CLEAN welcome card (NO “system loading” junk) */}
+      {/* GRANTED */}
       {step === "GRANTED" ? (
         <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-auto">
-          {/* sexy dim during fade */}
-          <div className={clsx("absolute inset-0 pointer-events-none transition-opacity duration-700", fadeDim ? "opacity-60" : "opacity-0")} style={{ background: "black" }} />
-
           <div className="relative w-[min(680px,92vw)] pointer-events-auto">
             <div className="rounded-3xl bg-black/70 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_18px_70px_rgba(0,0,0,0.84)] overflow-hidden pointer-events-auto">
               <div className="relative px-10 py-10 text-center pointer-events-auto">
-                <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-500 mb-3">Mileage Mafia</div>
+                <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-500 mb-3">
+                  Mileage Mafia
+                </div>
 
                 <div
                   className="text-3xl md:text-4xl tracking-tight"
@@ -377,10 +329,14 @@ export default function OathPage() {
                   CLEARANCE GRANTED
                 </div>
 
-                <div className="mt-3 text-neutral-400 text-sm">Welcome to the family. The ledger is now available.</div>
+                <div className="mt-3 text-neutral-400 text-sm">
+                  Welcome to the family. The ledger is now available.
+                </div>
 
                 <div className="mt-8 mx-auto w-full max-w-[540px] rounded-2xl bg-black/35 ring-1 ring-white/10 px-6 py-6 text-left">
-                  <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">CASE FILE</div>
+                  <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">
+                    CASE FILE
+                  </div>
 
                   <div className="mt-4 space-y-2 text-[12px] uppercase tracking-[0.18em] text-neutral-300">
                     <div className="flex items-center justify-between">
@@ -407,7 +363,11 @@ export default function OathPage() {
                   <button
                     type="button"
                     onClick={onLedgerClick}
-                    className={clsx("px-6 py-3 rounded-2xl font-semibold transition", "bg-white text-black hover:opacity-90", `ring-1 ${ACCENT.ring}`)}
+                    className={clsx(
+                      "px-6 py-3 rounded-2xl font-semibold transition",
+                      "bg-white text-black hover:opacity-90",
+                      `ring-1 ${ACCENT.ring}`
+                    )}
                     style={{ letterSpacing: "0.02em", touchAction: "manipulation" }}
                   >
                     View the Ledger →
@@ -423,7 +383,9 @@ export default function OathPage() {
                   </button>
                 </div>
 
-                <div className="mt-3 text-[10px] text-neutral-600">(Enter = Ledger • Esc = Door)</div>
+                <div className="mt-3 text-[10px] text-neutral-600">
+                  (Enter = Ledger • Esc = Door)
+                </div>
               </div>
             </div>
           </div>
@@ -441,7 +403,9 @@ export default function OathPage() {
                 <div className="pointer-events-none absolute inset-0 opacity-[0.08] noir-scanlines mix-blend-overlay" />
 
                 <div className="relative">
-                  <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-500">Case File</div>
+                  <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-500">
+                    Case File
+                  </div>
 
                   <div
                     className="mt-2 text-2xl tracking-tight"
@@ -456,26 +420,41 @@ export default function OathPage() {
 
                   <div className="mt-6 space-y-3 text-sm">
                     <div className="rounded-2xl bg-black/35 ring-1 ring-white/10 p-4">
-                      <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">STATUS</div>
-                      <div className="mt-2 font-semibold text-neutral-200">PENDING ARTICLES</div>
-                      <div className="mt-2 text-xs text-neutral-500">Complete the dossier to proceed.</div>
+                      <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">
+                        STATUS
+                      </div>
+                      <div className="mt-2 font-semibold text-neutral-200">
+                        PENDING ARTICLES
+                      </div>
+                      <div className="mt-2 text-xs text-neutral-500">
+                        Complete the dossier to proceed.
+                      </div>
                     </div>
 
                     <div className="rounded-2xl bg-black/35 ring-1 ring-white/10 p-4">
-                      <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">CHECKLIST</div>
+                      <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">
+                        CHECKLIST
+                      </div>
 
                       <div className="mt-2 text-neutral-300">
                         <div className="flex items-center justify-between text-sm">
                           <span>Articles</span>
-                          <span className="tabular-nums">{Object.values(checks).filter(Boolean).length}/{RULES.length}</span>
+                          <span className="tabular-nums">
+                            {Object.values(checks).filter(Boolean).length}/{RULES.length}
+                          </span>
                         </div>
 
                         <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
                           <div
                             className="h-full"
                             style={{
-                              width: `${Math.round((Object.values(checks).filter(Boolean).length / Math.max(1, RULES.length)) * 100)}%`,
-                              background: "linear-gradient(90deg, rgba(239,68,68,0.78), rgba(239,68,68,0.28))",
+                              width: `${Math.round(
+                                (Object.values(checks).filter(Boolean).length /
+                                  Math.max(1, RULES.length)) *
+                                  100
+                              )}%`,
+                              background:
+                                "linear-gradient(90deg, rgba(239,68,68,0.78), rgba(239,68,68,0.28))",
                             }}
                           />
                         </div>
@@ -497,8 +476,12 @@ export default function OathPage() {
                     </button>
                   </div>
 
-                  <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">Tip: Enter to file (when cleared)</div>
-                  <div className="mt-6 text-[10px] tracking-[0.22em] uppercase text-neutral-700">built by me • all rights reserved</div>
+                  <div className="mt-6 text-[10px] uppercase tracking-[0.35em] text-neutral-600">
+                    Tip: Enter to file (when cleared)
+                  </div>
+                  <div className="mt-6 text-[10px] tracking-[0.22em] uppercase text-neutral-700">
+                    built by me • all rights reserved
+                  </div>
                 </div>
               </div>
             </aside>
@@ -512,7 +495,9 @@ export default function OathPage() {
                 <div className="relative">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-400">Mileage Mafia • Dossier</div>
+                      <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-400">
+                        Mileage Mafia • Dossier
+                      </div>
                       <h2
                         className="mt-2 text-3xl sm:text-4xl tracking-tight"
                         style={{
@@ -523,13 +508,22 @@ export default function OathPage() {
                       >
                         Articles of Entry
                       </h2>
-                      <p className="mt-3 text-neutral-400 text-sm leading-relaxed">Read. Accept. Sign. File.</p>
+                      <p className="mt-3 text-neutral-400 text-sm leading-relaxed">
+                        Read. Accept. Sign. File.
+                      </p>
                     </div>
 
                     <div className="shrink-0">
                       <div className="rounded-2xl bg-black/35 ring-1 ring-white/10 px-4 py-3">
-                        <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">CLEARANCE</div>
-                        <div className={clsx("mt-2 text-sm font-semibold", canSwear ? "text-emerald-200" : "text-neutral-300")}>
+                        <div className="text-[10px] uppercase tracking-[0.35em] text-neutral-600">
+                          CLEARANCE
+                        </div>
+                        <div
+                          className={clsx(
+                            "mt-2 text-sm font-semibold",
+                            canSwear ? "text-emerald-200" : "text-neutral-300"
+                          )}
+                        >
                           {canSwear ? "READY TO FILE" : "NOT READY"}
                         </div>
                       </div>
@@ -551,7 +545,9 @@ export default function OathPage() {
                             "rounded-2xl",
                             accepted ? "mm-accepted" : "",
                             "transition-all ease-out",
-                            visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
+                            visible
+                              ? "opacity-100 translate-y-0"
+                              : "opacity-0 translate-y-2 pointer-events-none"
                           )}
                           style={{ transitionDuration: "520ms" }}
                         >
@@ -565,7 +561,10 @@ export default function OathPage() {
                             />
                             <span className="relative grid place-items-center h-5 w-5 rounded-full ring-1 ring-white/20 bg-black/40 transition peer-hover:ring-white/35 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-red-500/40">
                               <span
-                                className={clsx("h-[7px] w-[7px] rounded-full transition", accepted ? "scale-100 opacity-100" : "scale-0 opacity-0")}
+                                className={clsx(
+                                  "h-[7px] w-[7px] rounded-full transition",
+                                  accepted ? "scale-100 opacity-100" : "scale-0 opacity-0"
+                                )}
                                 style={{ background: "rgba(239,68,68,0.92)" }}
                               />
                             </span>
@@ -577,19 +576,33 @@ export default function OathPage() {
                                 Article {String(idx + 1).padStart(2, "0")}
                               </span>
                               {accepted ? (
-                                <span className="text-[10px] uppercase tracking-[0.28em]" style={{ color: ACCENT.redText }}>
+                                <span
+                                  className="text-[10px] uppercase tracking-[0.28em]"
+                                  style={{ color: ACCENT.redText }}
+                                >
                                   Accepted
                                 </span>
                               ) : (
-                                <span className="text-[10px] uppercase tracking-[0.28em] text-neutral-600">Pending</span>
+                                <span className="text-[10px] uppercase tracking-[0.28em] text-neutral-600">
+                                  Pending
+                                </span>
                               )}
                             </div>
 
                             <div className="relative mt-2">
-                              <div className={clsx("text-neutral-200 text-[13.5px] leading-relaxed", accepted ? "opacity-90" : "")}>
+                              <div
+                                className={clsx(
+                                  "text-neutral-200 text-[13.5px] leading-relaxed",
+                                  accepted ? "opacity-90" : ""
+                                )}
+                              >
                                 {r.text}
                               </div>
-                              {accepted ? <div className="pointer-events-none absolute right-0 top-[-6px] mm-ink">INKED</div> : null}
+                              {accepted ? (
+                                <div className="pointer-events-none absolute right-0 top-[-6px] mm-ink">
+                                  INKED
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         </label>
@@ -599,7 +612,9 @@ export default function OathPage() {
 
                   {/* Signature */}
                   <div className="mt-10 rounded-3xl ring-1 ring-white/10 bg-black/35 p-6 sm:p-7">
-                    <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-500">Signature</div>
+                    <div className="text-[10px] uppercase tracking-[0.38em] text-neutral-500">
+                      Signature
+                    </div>
 
                     <div className="mt-4">
                       <input
@@ -615,7 +630,11 @@ export default function OathPage() {
                       />
 
                       <div className="mt-2 text-xs text-neutral-500">
-                        {signed ? <span className="text-emerald-200/90">Signed.</span> : "Type at least 3 characters to sign."}
+                        {signed ? (
+                          <span className="text-emerald-200/90">Signed.</span>
+                        ) : (
+                          "Type at least 3 characters to sign."
+                        )}
                       </div>
                     </div>
                   </div>
@@ -628,10 +647,13 @@ export default function OathPage() {
                       disabled={!canSwear}
                       className={clsx(
                         "w-full rounded-2xl py-4 transition shadow-[0_12px_46px_rgba(0,0,0,0.65)]",
-                        canSwear ? "bg-white text-black hover:opacity-90 ring-1 ring-white/20" : "bg-white text-black opacity-25 cursor-not-allowed"
+                        canSwear
+                          ? "bg-white text-black hover:opacity-90 ring-1 ring-white/20"
+                          : "bg-white text-black opacity-25 cursor-not-allowed"
                       )}
                       style={{
-                        fontFamily: "ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif",
+                        fontFamily:
+                          "ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif",
                         letterSpacing: "0.22em",
                         textTransform: "uppercase",
                         fontWeight: 800,
@@ -640,10 +662,15 @@ export default function OathPage() {
                       File Dossier
                     </button>
 
-                    <div className="mt-4 text-xs text-neutral-500">Your file will be reviewed before clearance is granted.</div>
+                    <div className="mt-4 text-xs text-neutral-500">
+                      Your file will be reviewed before clearance is granted.
+                    </div>
 
                     {canSwear ? (
-                      <div className="mt-3 text-[10px] uppercase tracking-[0.35em]" style={{ color: ACCENT.redText }}>
+                      <div
+                        className="mt-3 text-[10px] uppercase tracking-[0.35em]"
+                        style={{ color: ACCENT.redText }}
+                      >
                         clearance granted • press enter
                       </div>
                     ) : null}

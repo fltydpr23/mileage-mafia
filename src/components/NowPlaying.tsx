@@ -9,19 +9,16 @@ function fmt(sec: number) {
   const s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
 }
-
 function clsx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
-
-const STORAGE_POS = "mm_nowplaying_pos_v3";
-const STORAGE_MINI = "mm_nowplaying_mini_v3";
-
-type Point = { x: number; y: number };
-
 function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
 }
+
+const STORAGE_POS = "mm_nowplaying_pos_v4";
+const STORAGE_MINI = "mm_nowplaying_mini_v4";
+type Point = { x: number; y: number };
 
 export default function NowPlaying() {
   const {
@@ -41,27 +38,25 @@ export default function NowPlaying() {
     playMusic,
   } = useAudio();
 
-  // --- UI state ---
   const [mini, setMini] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // --- position (from bottom-right) ---
   const [pos, setPos] = useState<Point>({ x: 16, y: 16 });
   const draggingRef = useRef(false);
   const pointerStartRef = useRef<Point>({ x: 0, y: 0 });
   const posStartRef = useRef<Point>({ x: 16, y: 16 });
 
-  // Load persisted prefs
+  // load prefs
   useEffect(() => {
     try {
-      const savedMini = localStorage.getItem(STORAGE_MINI);
-      if (savedMini === "1") setMini(true);
+      const m = localStorage.getItem(STORAGE_MINI);
+      if (m === "1") setMini(true);
 
-      const savedPos = localStorage.getItem(STORAGE_POS);
-      if (savedPos) {
-        const p = JSON.parse(savedPos);
-        if (typeof p?.x === "number" && typeof p?.y === "number") {
-          setPos({ x: p.x, y: p.y });
+      const p = localStorage.getItem(STORAGE_POS);
+      if (p) {
+        const parsed = JSON.parse(p);
+        if (typeof parsed?.x === "number" && typeof parsed?.y === "number") {
+          setPos({ x: parsed.x, y: parsed.y });
         }
       }
     } catch {}
@@ -113,13 +108,12 @@ export default function NowPlaying() {
     [setVolume]
   );
 
-  // One-tap “make it play” (best effort)
   const ensurePlay = useCallback(async () => {
     if (busy) return;
     setBusy(true);
     try {
       if (!unlocked) await unlock();
-      await playMusic(); // plays current/last index
+      await playMusic();
     } catch {
       try {
         await recover();
@@ -129,7 +123,7 @@ export default function NowPlaying() {
     }
   }, [busy, unlocked, unlock, playMusic, recover]);
 
-  // --- drag handlers ---
+  // drag handlers
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       if ((e as any).button != null && (e as any).button !== 0) return;
@@ -157,7 +151,6 @@ export default function NowPlaying() {
     const w = typeof window !== "undefined" ? window.innerWidth : 1000;
     const h = typeof window !== "undefined" ? window.innerHeight : 800;
 
-    // Conservative clamp so it stays visible
     const maxX = Math.max(8, w - 120);
     const maxY = Math.max(8, h - 120);
 
@@ -175,23 +168,17 @@ export default function NowPlaying() {
 
   return (
     <div
-      className="fixed z-50"
-      style={{
-        right: pos.x,
-        bottom: pos.y,
-        width: panelW,
-        maxWidth: "92vw",
-      }}
+      className="fixed z-50 transition-all duration-200 opacity-60 blur-[1px] hover:opacity-100 hover:blur-0"
+      style={{ right: pos.x, bottom: pos.y, width: panelW, maxWidth: "92vw" }}
     >
-      <div className="rounded-2xl bg-neutral-900/95 backdrop-blur-xl ring-1 ring-neutral-800 shadow-2xl overflow-hidden">
-        {/* Drag handle + actions */}
+      <div className="rounded-2xl bg-neutral-900/95 backdrop-blur-xl ring-1 ring-neutral-800 hover:ring-neutral-700/80 shadow-2xl overflow-hidden">
+        {/* Drag bar */}
         <div
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           className={clsx(
-            "select-none",
-            "cursor-grab active:cursor-grabbing",
+            "select-none cursor-grab active:cursor-grabbing",
             "px-4 py-2 border-b border-neutral-800",
             "flex items-center justify-between gap-3"
           )}
@@ -202,7 +189,6 @@ export default function NowPlaying() {
             <div className="text-[10px] uppercase tracking-[0.28em] text-neutral-400 truncate">
               Noir Radio
             </div>
-
             {busy ? (
               <span className="text-[10px] uppercase tracking-[0.22em] text-neutral-500">
                 working…
@@ -247,6 +233,7 @@ export default function NowPlaying() {
             </div>
           </div>
 
+          {/* Mini */}
           {mini ? (
             <>
               <div className="mt-3">
@@ -271,7 +258,7 @@ export default function NowPlaying() {
 
                   <button
                     onClick={() => void toggle()}
-                    className="h-9 w-9 rounded-full bg-white text-black font-black flex items-center justify-center hover:opacity-90 transition"
+                    className="h-9 w-9 rounded-full bg-white text-black font-black grid place-items-center hover:opacity-90 transition"
                     title={playing ? "Pause" : "Play"}
                   >
                     {playing ? "❚❚" : "▶"}
@@ -294,7 +281,6 @@ export default function NowPlaying() {
                     "bg-white/5 ring-1 ring-white/10 text-neutral-200 hover:bg-white/10",
                     busy ? "opacity-60 cursor-not-allowed" : ""
                   )}
-                  title="Force play (if browser blocked it)"
                 >
                   Start
                 </button>
@@ -339,7 +325,7 @@ export default function NowPlaying() {
 
                   <button
                     onClick={() => void toggle()}
-                    className="h-9 w-9 rounded-full bg-white text-black font-black flex items-center justify-center hover:opacity-90 transition"
+                    className="h-9 w-9 rounded-full bg-white text-black font-black grid place-items-center hover:opacity-90 transition"
                     title={playing ? "Pause" : "Play"}
                   >
                     {playing ? "❚❚" : "▶"}
@@ -369,10 +355,6 @@ export default function NowPlaying() {
                     className="w-full accent-white"
                   />
                 </div>
-              </div>
-
-              <div className="mt-3 text-[10px] uppercase tracking-[0.28em] text-neutral-600">
-                Drag from the top bar • Auto-collapses on track change
               </div>
 
               {!unlocked ? (
