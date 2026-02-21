@@ -2,8 +2,7 @@ import Link from "next/link";
 import { getSheet } from "@/lib/sheets";
 import PotChip from "@/components/PotChip";
 import NowPlaying from "@/components/NowPlaying";
-
-
+import LeaderboardRunnersClient from "@/components/LeaderboardRunnersClient";
 
 export const dynamic = "force-dynamic";
 
@@ -18,12 +17,6 @@ function toPercent(v: any) {
 }
 function slugifyName(name: string) {
   return encodeURIComponent(name.trim());
-}
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const a = parts[0]?.[0] ?? "";
-  const b = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return (a + b).toUpperCase();
 }
 function fmtINR(n: number) {
   return `₹${Math.round(n).toLocaleString("en-IN")}`;
@@ -60,19 +53,18 @@ export const MAFIA_LEVELS = [
   {
     minKm: 250,
     name: "Soldier",
-     pill: "bg-emerald-950 text-emerald-50 ring-1 ring-emerald-700/30",
+    pill: "bg-emerald-950 text-emerald-50 ring-1 ring-emerald-700/30",
     tint: "bg-emerald-950/18 ring-emerald-700/25",
     bar: "bg-emerald-700",
     desc: "250–499 km",
   },
   {
-   minKm: 0,
-  name: "Associate",
-  // Gunmetal Grey (clean + minimal)
-  pill: "bg-neutral-700 text-neutral-100 ring-1 ring-neutral-500/30",
-  tint: "bg-neutral-800/40 ring-neutral-500/25",
-  bar: "bg-neutral-500",
-  desc: "0–249 km"
+    minKm: 0,
+    name: "Associate",
+    pill: "bg-neutral-700 text-neutral-100 ring-1 ring-neutral-500/30",
+    tint: "bg-neutral-800/40 ring-neutral-500/25",
+    bar: "bg-neutral-500",
+    desc: "0–249 km",
   },
 ] as const;
 
@@ -107,7 +99,6 @@ export default async function LeaderboardPage() {
   // ===== POT =====
   const oathPot = totalRunners * 1000;
 
-  // Penalties: Kumar + Rishi paid ₹500 each (Bribery on 2 Feb 2026)
   const PENALTIES = [
     { name: "Kumar", amount: 500, reason: "Bribery", date: "2 Feb 2026" },
     { name: "Rishi", amount: 500, reason: "Bribery", date: "2 Feb 2026" },
@@ -126,11 +117,12 @@ export default async function LeaderboardPage() {
   const leader = sorted[0];
   const leaderLvl = leader ? getMafiaLevel(leader.yearlyKm) : null;
 
-  // Manual for now (later: read from Sheets)
-  const LAST_UPDATED = "8 Feb • 22:24 IST";
+  const LAST_UPDATED = "16 Feb • 10:33 IST";
 
   const APP_HEADER_H = 72; // px
   const LIST_HEADER_H = 56; // px
+
+  const sortLabel = sorted.some((r) => r.rank) ? "rank" : "completion";
 
   return (
     <main className="min-h-screen text-white bg-neutral-950">
@@ -143,7 +135,6 @@ export default async function LeaderboardPage() {
           className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4"
           style={{ minHeight: APP_HEADER_H }}
         >
-          {/* Row 1 */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="h-10 w-10 rounded-2xl bg-white/10 ring-1 ring-white/10 flex items-center justify-center font-black shrink-0">
@@ -157,17 +148,32 @@ export default async function LeaderboardPage() {
               </div>
             </div>
 
-            {/* Pot + runner count live on the RIGHT (not under logo) */}
             <div className="flex items-center gap-2 shrink-0">
               <Chip label="Runners" value={String(totalRunners)} />
-              <PotChip total={totalPot} oathPot={oathPot} penaltyFund={penaltyFund} />
+
+              <Link
+                href="/races"
+                className="races-chip px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-extrabold tracking-[0.18em] relative overflow-hidden"
+                title="Upcoming races"
+              >
+                <span className="relative z-10">Races →</span>
+                <span className="races-chip__sheen" aria-hidden />
+              </Link>
+
+              <PotChip
+                total={totalPot}
+                oathPot={oathPot}
+                penaltyFund={penaltyFund}
+              />
             </div>
           </div>
 
-          {/* Row 2 (mobile-friendly last updated) */}
           <div className="mt-2 flex items-center justify-between">
             <p className="text-neutral-500 text-xs tabular-nums">
-              Last update: <span className="text-neutral-300 font-semibold">{LAST_UPDATED}</span>
+              Last update:{" "}
+              <span className="text-neutral-300 font-semibold">
+                {LAST_UPDATED}
+              </span>
             </p>
 
             <p className="text-neutral-600 text-xs hidden sm:block">
@@ -202,7 +208,7 @@ export default async function LeaderboardPage() {
                   ) : null}
 
                   {leader ? (
-                    <span className="px-3 py-1 rounded-full text-[11px] font-extrabold bg-white/5 ring-1 ring-green-500/10 text-neutral-200">
+                    <span className="px-3 py-1 rounded-full text-[11px] font-extrabold bg-emerald-500/10 ring-1 ring-emerald-500/20 text-emerald-200">
                       +₹ 1,000
                     </span>
                   ) : null}
@@ -231,7 +237,6 @@ export default async function LeaderboardPage() {
               ) : null}
             </div>
 
-            {/* Stats tiles (4 total, premium grid) */}
             <div className="mt-6 grid grid-cols-2 gap-3">
               <MiniKpi
                 label="Group target"
@@ -241,14 +246,16 @@ export default async function LeaderboardPage() {
                 label="KM logged"
                 value={`${Math.round(totalKm).toLocaleString("en-IN")} km`}
               />
-              <MiniKpi label="Avg completion" value={`${avgCompletion.toFixed(1)}%`} />
+              <MiniKpi
+                label="Avg completion"
+                value={`${avgCompletion.toFixed(1)}%`}
+              />
               <MiniKpi label="House rule" value="Respect the Oath." />
             </div>
           </div>
 
-          {/* Right column: Hierarchy + Challenges */}
+          {/* Right column */}
           <div className="space-y-4 sm:space-y-6 h-full">
-            {/* Hierarchy */}
             <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10">
               <p className="text-neutral-400 text-xs uppercase tracking-wider">
                 Hierarchy
@@ -277,7 +284,9 @@ export default async function LeaderboardPage() {
                           >
                             {lvl.name}
                           </span>
-                          <span className="text-neutral-500 text-xs">{lvl.desc}</span>
+                          <span className="text-neutral-500 text-xs">
+                            {lvl.desc}
+                          </span>
                         </div>
                       </div>
 
@@ -294,7 +303,6 @@ export default async function LeaderboardPage() {
               </p>
             </div>
 
-            {/* Challenges (replaces Contracts) */}
             <Link
               href="/challenges"
               className="group block rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10 hover:bg-white/[0.04] transition shadow-[0_18px_70px_rgba(0,0,0,0.55)]"
@@ -320,231 +328,121 @@ export default async function LeaderboardPage() {
                   </p>
 
                   <div className="mt-4 grid grid-cols-2 gap-2">
-
                     <div className="rounded-2xl bg-neutral-950/40 ring-1 ring-neutral-800 px-4 py-3">
                       <p className="text-neutral-500 text-[10px] uppercase tracking-wider">
                         First Area Don
                       </p>
-                      <p className="mt-1 font-black tabular-nums">+{fmtINR(500)}</p>
+                      <p className="mt-1 font-black tabular-nums">
+                        +{fmtINR(500)}
+                      </p>
                       <p className="mt-1 text-neutral-600 text-xs">at 500 km</p>
                     </div>
                   </div>
 
                   <p className="mt-4 text-neutral-600 text-xs">
-                    Penalty pool: <span className="text-neutral-300 font-semibold tabular-nums">{fmtINR(penaltyFund)}</span>{" "}
+                    Penalty pool:{" "}
+                    <span className="text-neutral-300 font-semibold tabular-nums">
+                      {fmtINR(penaltyFund)}
+                    </span>{" "}
                     (Kumar + Rishi — bribery, 2 Feb 2026)
                   </p>
                 </div>
 
                 <div className="shrink-0 inline-flex items-center gap-2 text-sm font-semibold text-neutral-200 mt-1">
                   Open
-                  <span className="transition-transform group-hover:translate-x-0.5">→</span>
+                  <span className="transition-transform group-hover:translate-x-0.5">
+                    →
+                  </span>
                 </div>
               </div>
             </Link>
           </div>
         </section>
 
-        {/* Leaderboard header */}
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <p className="text-neutral-400 text-xs uppercase tracking-wider">
-              Leaderboard
-            </p>
-            <h3 className="text-xl sm:text-2xl font-bold mt-1">Runners</h3>
-          </div>
-          <p className="text-neutral-500 text-sm text-right">
-            Sorted by{" "}
-            <span className="text-neutral-300">
-              {sorted.some((r) => r.rank) ? "rank" : "completion"}
-            </span>
-          </p>
-        </div>
-
-        {/* List */}
-        <section className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 overflow-hidden">
-          <div
-            className="hidden sm:block sticky z-30 bg-neutral-950/90 backdrop-blur-xl border-b border-neutral-800"
-            style={{ top: APP_HEADER_H, height: LIST_HEADER_H }}
-          >
-            <div className="grid grid-cols-12 gap-4 px-6 md:px-8 h-full items-center text-xs uppercase tracking-wider text-neutral-500">
-              <div className="col-span-1">#</div>
-              <div className="col-span-6">Runner</div>
-              <div className="col-span-2 text-right">KM</div>
-              <div className="col-span-2 text-right">%</div>
-              <div className="col-span-1 text-right" />
-            </div>
-          </div>
-
-          <div className="divide-y divide-neutral-800 sm:pt-[56px]">
-            {sorted.map((r, idx) => {
-              const lvl = getMafiaLevel(r.yearlyKm);
-              const pct = Math.min(Math.max(r.completion, 0), 100);
-              const rankShown = r.rank ? r.rank : idx + 1;
-
-              const isLeader = rankShown === 1;
-              const isPenalized = PENALTIES.some(
-                (p) => p.name.toLowerCase() === r.name.toLowerCase()
-              );
-
-              return (
-                <Link
-                  key={r.name}
-                  href={`/runners/${slugifyName(r.name)}`}
-                  className="block"
-                >
-                  {/* MOBILE */}
-                  <div className="sm:hidden px-4 py-5 hover:bg-white/5 transition">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div
-                          className={`h-11 w-11 rounded-2xl ring-1 ${lvl.tint} flex items-center justify-center font-black shrink-0`}
-                        >
-                          {initials(r.name)}
-                        </div>
-
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="text-neutral-400 font-semibold tabular-nums">
-                              #{rankShown}
-                            </div>
-                            <div className="font-bold text-base truncate">
-                              {r.name}
-                            </div>
-                          </div>
-
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <span
-                              className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold ${lvl.pill}`}
-                            >
-                              {lvl.name}
-                            </span>
-
-                            {isLeader ? (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-white/5 ring-1 ring-white/10 text-neutral-200">
-                                +₹ 1,000
-                              </span>
-                            ) : null}
-
-                            {isPenalized ? (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-red-500/10 text-red-200 ring-1 ring-red-500/20">
-                                -₹ 500
-                              </span>
-                            ) : null}
-
-                            <div className="text-neutral-400 text-xs tabular-nums">
-                              {Math.round(r.yearlyKm).toLocaleString("en-IN")} km •{" "}
-                              {pct.toFixed(1)}%
-                            </div>
-                          </div>
-
-                          <div className="mt-3 h-2 bg-neutral-800 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full ${lvl.bar}`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-
-                          <div className="mt-2 text-neutral-500 text-xs">
-                            Target {Math.round(r.annualTarget)} km • Weekly{" "}
-                            {Math.round(r.weeklyTarget)} km
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="text-neutral-500 text-2xl leading-none">›</div>
-                    </div>
-                  </div>
-
-                  {/* DESKTOP */}
-                  <div className="hidden sm:block px-6 md:px-8 py-6 hover:bg-white/5 transition">
-                    <div className="grid grid-cols-12 gap-4 items-center">
-                      <div className="col-span-1 text-neutral-400 font-semibold tabular-nums">
-                        {rankShown}
-                      </div>
-
-                      <div className="col-span-6 min-w-0">
-                        <div className="flex items-center gap-4 min-w-0">
-                          <div
-                            className={`h-11 w-11 rounded-2xl ring-1 ${lvl.tint} flex items-center justify-center font-black`}
-                          >
-                            {initials(r.name)}
-                          </div>
-
-                          <div className="min-w-0 w-full">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="min-w-0 flex items-center gap-2">
-                                <p className="font-bold text-lg truncate">{r.name}</p>
-
-                                {isLeader ? (
-                                  <span className="shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold bg-white/5 ring-1 ring-white/10 text-neutral-200">
-                                    +₹ 1,000
-                                  </span>
-                                ) : null}
-
-                                {isPenalized ? (
-                                  <span className="shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold bg-red-500/10 text-red-200 ring-1 ring-red-500/20">
-                                    -₹ 500
-                                  </span>
-                                ) : null}
-                              </div>
-
-                              <span
-                                className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold ${lvl.pill}`}
-                              >
-                                {lvl.name}
-                              </span>
-                            </div>
-
-                            <p className="text-neutral-500 text-sm mt-1">
-                              Target {Math.round(r.annualTarget)} km • Weekly{" "}
-                              {Math.round(r.weeklyTarget)} km
-                            </p>
-
-                            <div className="mt-3 h-2 bg-neutral-800 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full ${lvl.bar}`}
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="col-span-2 text-right">
-                        <p className="text-white font-semibold tabular-nums text-lg">
-                          {Math.round(r.yearlyKm).toLocaleString("en-IN")}
-                        </p>
-                        <p className="text-neutral-500 text-xs">km</p>
-                      </div>
-
-                      <div className="col-span-2 text-right">
-                        <p className="text-white font-semibold tabular-nums text-lg">
-                          {pct.toFixed(1)}
-                        </p>
-                        <p className="text-neutral-500 text-xs">%</p>
-                      </div>
-
-                      <div className="col-span-1 text-right text-neutral-500">
-                        <span className="text-2xl leading-none">›</span>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
+        {/* ✅ Compare-enabled leaderboard section (client-rendered list) */}
+        <LeaderboardRunnersClient
+          sorted={sorted}
+          penalties={PENALTIES as any}
+          appHeaderH={APP_HEADER_H}
+          listHeaderH={LIST_HEADER_H}
+          sortLabel={sortLabel}
+        />
 
         <p className="text-neutral-600 text-sm">
           Next: weekly movers (▲▼) + streaks once Strava sync lands.
         </p>
       </div>
+
       {/* Client-only audio widgets */}
       <div>
-        
         <NowPlaying />
       </div>
+
+      {/* ✅ CSS MUST be inside JSX return */}
+      <style>{`
+        .races-chip {
+          position: relative;
+          border: 1px solid rgba(16,185,129,0.28);
+          background: rgba(16,185,129,0.10);
+          color: rgba(167,243,208,0.95);
+          box-shadow:
+            0 0 0 1px rgba(16,185,129,0.12),
+            0 0 0 rgba(16,185,129,0.0);
+          animation: racesPulse 2.6s ease-in-out infinite;
+          transform: translateZ(0);
+          will-change: box-shadow;
+        }
+
+        .races-chip:hover {
+          background: rgba(16,185,129,0.16);
+        }
+
+        .races-chip__sheen {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background: linear-gradient(
+            110deg,
+            transparent 0%,
+            rgba(255,255,255,0.08) 35%,
+            transparent 70%
+          );
+          transform: translateX(-120%);
+          animation: sheenSweep 3.4s ease-in-out infinite;
+          opacity: 0.7;
+        }
+
+        @keyframes sheenSweep {
+          0%, 55% { transform: translateX(-120%); }
+          85% { transform: translateX(120%); }
+          100% { transform: translateX(120%); }
+        }
+
+        @keyframes racesPulse {
+          0% {
+            box-shadow:
+              0 0 0 1px rgba(16,185,129,0.12),
+              0 0 0 rgba(16,185,129,0.0);
+          }
+          50% {
+            box-shadow:
+              0 0 0 1px rgba(16,185,129,0.30),
+              0 0 26px rgba(16,185,129,0.40);
+          }
+          100% {
+            box-shadow:
+              0 0 0 1px rgba(16,185,129,0.12),
+              0 0 0 rgba(16,185,129,0.0);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .races-chip,
+          .races-chip__sheen {
+            animation: none !important;
+          }
+        }
+      `}</style>
     </main>
   );
 }
@@ -561,7 +459,9 @@ function Chip({ label, value }: { label: string; value: string }) {
 function MiniKpi({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl bg-neutral-950/40 ring-1 ring-neutral-800 px-4 sm:px-5 py-3 sm:py-4">
-      <p className="text-neutral-500 text-xs uppercase tracking-wider">{label}</p>
+      <p className="text-neutral-500 text-xs uppercase tracking-wider">
+        {label}
+      </p>
       <p className="text-white font-bold mt-2">{value}</p>
     </div>
   );
