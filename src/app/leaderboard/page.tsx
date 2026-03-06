@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { getSheet } from "@/lib/sheets";
 import PotChip from "@/components/PotChip";
-import NowPlaying from "@/components/NowPlaying";
 import LeaderboardRunnersClient from "@/components/LeaderboardRunnersClient";
+import F1LeaderboardView from "@/components/F1LeaderboardView";
 
 export const dynamic = "force-dynamic";
 
@@ -129,35 +129,43 @@ export default async function LeaderboardPage() {
       {/* App background glow */}
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(900px_circle_at_20%_-10%,rgba(255,255,255,0.08),transparent_60%),radial-gradient(900px_circle_at_90%_0%,rgba(16,185,129,0.10),transparent_55%),radial-gradient(900px_circle_at_60%_110%,rgba(244,63,94,0.10),transparent_55%)]" />
 
-      {/* Top Nav */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-neutral-950/70 border-b border-neutral-900">
-        <div
-          className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4"
-          style={{ minHeight: APP_HEADER_H }}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="h-10 w-10 rounded-2xl bg-white/10 ring-1 ring-white/10 flex items-center justify-center font-black shrink-0">
-                MM
+      {/* Top Nav - Broadcast HUD */}
+      <header className="absolute top-0 w-full z-50 bg-black/40 border-b border-red-600/20 backdrop-blur-xl">
+        <div className="w-full px-4 sm:px-6 py-2">
+
+          {/* Top minimal status bar */}
+          <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-2">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20">
+                <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-red-400">Live Broadcast</span>
               </div>
-              <div className="leading-tight min-w-0">
-                <p className="font-black tracking-tight text-base sm:text-lg truncate">
-                  Mileage Mafia
-                </p>
-                <p className="text-neutral-400 text-xs">Season 2</p>
+              <span className="text-[9px] font-mono text-neutral-500 tracking-wider">SECURE CONNECTION ESTABLISHED</span>
+            </div>
+            <div className="text-[9px] font-mono text-cyan-500/70 tracking-wider hidden sm:block">
+              SYS_TIME: {LAST_UPDATED}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-4">
+              <div className="h-10 w-10 bg-neutral-900 border border-neutral-800 flex items-center justify-center relative overflow-hidden shrink-0">
+                <div className="absolute inset-0 bg-red-500/5 mix-blend-overlay" />
+                <span className="font-black text-sm text-neutral-300 relative z-10">MM</span>
+                <div className="absolute bottom-0 w-full h-[2px] bg-red-600" />
+              </div>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-black tracking-tight uppercase leading-none">Global Telemetry Stream</h1>
+                <p className="text-[10px] font-bold tracking-[0.2em] text-cyan-400 uppercase mt-1">Mileage Mafia // Season 02</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              <Chip label="Runners" value={String(totalRunners)} />
-
+            <div className="flex items-center gap-3 shrink-0">
               <Link
                 href="/races"
-                className="races-chip px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-extrabold tracking-[0.18em] relative overflow-hidden"
-                title="Upcoming races"
+                className="races-chip px-4 py-2 bg-neutral-900/50 border-r-2 border-r-cyan-500 text-[10px] font-black tracking-[0.2em] uppercase transition-colors hover:bg-neutral-800"
               >
-                <span className="relative z-10">Races →</span>
-                <span className="races-chip__sheen" aria-hidden />
+                Race Calendar →
               </Link>
 
               <PotChip
@@ -167,215 +175,18 @@ export default async function LeaderboardPage() {
               />
             </div>
           </div>
-
-          <div className="mt-2 flex items-center justify-between">
-            <p className="text-neutral-500 text-xs tabular-nums">
-              Last update:{" "}
-              <span className="text-neutral-300 font-semibold">
-                {LAST_UPDATED}
-              </span>
-            </p>
-
-            <p className="text-neutral-600 text-xs hidden sm:block">
-              Sheet → Site sync is manual (for now).
-            </p>
-          </div>
         </div>
       </header>
 
-      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        {/* HERO ROW */}
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-stretch">
-          {/* Leader */}
-          <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10 h-full">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-5">
-              <div className="space-y-2 min-w-0">
-                <p className="text-neutral-400 text-xs uppercase tracking-wider">
-                  Current leader
-                </p>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight leading-tight truncate">
-                    {leader ? leader.name : "—"}
-                  </h1>
-
-                  {leaderLvl ? (
-                    <span
-                      className={`px-3 py-1 rounded-full text-[11px] font-extrabold ${leaderLvl.pill}`}
-                    >
-                      {leaderLvl.name}
-                    </span>
-                  ) : null}
-
-                  {leader ? (
-                    <span className="px-3 py-1 rounded-full text-[11px] font-extrabold bg-emerald-500/10 ring-1 ring-emerald-500/20 text-emerald-200">
-                      +₹ 1,000
-                    </span>
-                  ) : null}
-                </div>
-
-                {leader ? (
-                  <p className="text-neutral-400">
-                    <span className="text-white font-semibold tabular-nums">
-                      {Math.round(leader.yearlyKm).toLocaleString("en-IN")}
-                    </span>{" "}
-                    km •{" "}
-                    <span className="text-white font-semibold tabular-nums">
-                      {leader.completion.toFixed(1)}%
-                    </span>
-                  </p>
-                ) : null}
-              </div>
-
-              {leader ? (
-                <Link
-                  href={`/runners/${slugifyName(leader.name)}`}
-                  className="shrink-0 px-5 py-3 rounded-full bg-white text-black font-semibold hover:opacity-90 transition w-full sm:w-auto text-center"
-                >
-                  Open runner →
-                </Link>
-              ) : null}
-            </div>
-
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <MiniKpi
-                label="Group target"
-                value={`${Math.round(totalTargetKm).toLocaleString("en-IN")} km`}
-              />
-              <MiniKpi
-                label="KM logged"
-                value={`${Math.round(totalKm).toLocaleString("en-IN")} km`}
-              />
-              <MiniKpi
-                label="Avg completion"
-                value={`${avgCompletion.toFixed(1)}%`}
-              />
-              <MiniKpi label="House rule" value="Respect the Oath." />
-            </div>
-          </div>
-
-          {/* Right column */}
-          <div className="space-y-4 sm:space-y-6 h-full">
-            <div className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10">
-              <p className="text-neutral-400 text-xs uppercase tracking-wider">
-                Hierarchy
-              </p>
-              <h2 className="text-xl font-bold mt-2">Family levels</h2>
-              <p className="text-neutral-500 text-sm mt-2">
-                Levels are based on{" "}
-                <span className="text-neutral-300">yearly KM</span>.
-              </p>
-
-              <div className="mt-6 space-y-4">
-                {MAFIA_LEVELS.map((lvl) => {
-                  const count = rows.filter(
-                    (r) => getMafiaLevel(r.yearlyKm).name === lvl.name
-                  ).length;
-
-                  return (
-                    <div
-                      key={lvl.name}
-                      className="flex items-start justify-between gap-4"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`px-3 py-1 rounded-full text-[11px] font-extrabold ${lvl.pill}`}
-                          >
-                            {lvl.name}
-                          </span>
-                          <span className="text-neutral-500 text-xs">
-                            {lvl.desc}
-                          </span>
-                        </div>
-                      </div>
-
-                      <span className="text-white font-semibold tabular-nums">
-                        {count}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <p className="mt-6 text-neutral-600 text-xs">
-                Pro tip: consistency beats hero weeks.
-              </p>
-            </div>
-
-            <Link
-              href="/challenges"
-              className="group block rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 p-6 sm:p-8 md:p-10 hover:bg-white/[0.04] transition shadow-[0_18px_70px_rgba(0,0,0,0.55)]"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="text-neutral-400 text-xs uppercase tracking-wider">
-                    Bounties
-                  </div>
-
-                  <div className="mt-2 flex items-center gap-2 min-w-0">
-                    <div className="text-xl font-black tracking-tight truncate">
-                      Challenges
-                    </div>
-
-                    <span className="shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-500/20">
-                      Live
-                    </span>
-                  </div>
-
-                  <p className="mt-2 text-neutral-500 text-sm leading-relaxed">
-                    Automatic rewards funded by penalty money.
-                  </p>
-
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    <div className="rounded-2xl bg-neutral-950/40 ring-1 ring-neutral-800 px-4 py-3">
-                      <p className="text-neutral-500 text-[10px] uppercase tracking-wider">
-                        First Area Don
-                      </p>
-                      <p className="mt-1 font-black tabular-nums">
-                        +{fmtINR(500)}
-                      </p>
-                      <p className="mt-1 text-neutral-600 text-xs">at 500 km</p>
-                    </div>
-                  </div>
-
-                  <p className="mt-4 text-neutral-600 text-xs">
-                    Penalty pool:{" "}
-                    <span className="text-neutral-300 font-semibold tabular-nums">
-                      {fmtINR(penaltyFund)}
-                    </span>{" "}
-                    (Kumar + Rishi — bribery, 2 Feb 2026)
-                  </p>
-                </div>
-
-                <div className="shrink-0 inline-flex items-center gap-2 text-sm font-semibold text-neutral-200 mt-1">
-                  Open
-                  <span className="transition-transform group-hover:translate-x-0.5">
-                    →
-                  </span>
-                </div>
-              </div>
-            </Link>
-          </div>
-        </section>
-
-        {/* ✅ Compare-enabled leaderboard section (client-rendered list) */}
-        <LeaderboardRunnersClient
-          sorted={sorted}
-          penalties={PENALTIES as any}
-          appHeaderH={APP_HEADER_H}
-          listHeaderH={LIST_HEADER_H}
-          sortLabel={sortLabel}
+      <div className="absolute inset-0 z-10 pointer-events-none">
+        <F1LeaderboardView
+          runners={sorted}
+          globalStats={{
+            totalRunners: sorted.length,
+            totalKm,
+            totalTargetKm
+          }}
         />
-
-        <p className="text-neutral-600 text-sm">
-          Next: weekly movers (▲▼) + streaks once Strava sync lands.
-        </p>
-      </div>
-
-      {/* Client-only audio widgets */}
-      <div>
-        <NowPlaying />
       </div>
 
       {/* ✅ CSS MUST be inside JSX return */}

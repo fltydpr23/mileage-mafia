@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import { AudioProvider } from "@/components/AudioProvider";
+import AudioRoot from "@/components/AudioRoot";
 import Link from "next/link";
 // import NowPlaying from "@/components/NowPlaying";
 
@@ -28,7 +29,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full bg-neutral-950">
       <body className={`${geistSans.className} ${geistMono.variable} antialiased bg-neutral-950 text-white min-h-screen`}>
-        <AudioProvider>{children}</AudioProvider>
+        <AudioRoot>{children}</AudioRoot>
       </body>
     </html>
   );

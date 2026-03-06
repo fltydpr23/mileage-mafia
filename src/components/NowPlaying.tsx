@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAudio } from "@/components/AudioProvider";
+import { motion } from "framer-motion";
 
 function fmt(sec: number) {
   if (!Number.isFinite(sec) || sec < 0) return "0:00";
@@ -59,19 +60,19 @@ export default function NowPlaying() {
           setPos({ x: parsed.x, y: parsed.y });
         }
       }
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_MINI, mini ? "1" : "0");
-    } catch {}
+    } catch { }
   }, [mini]);
 
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_POS, JSON.stringify(pos));
-    } catch {}
+    } catch { }
   }, [pos]);
 
   // Auto-collapse when track changes
@@ -117,7 +118,7 @@ export default function NowPlaying() {
     } catch {
       try {
         await recover();
-      } catch {}
+      } catch { }
     } finally {
       setBusy(false);
     }
@@ -132,7 +133,7 @@ export default function NowPlaying() {
       posStartRef.current = pos;
       try {
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-      } catch {}
+      } catch { }
     },
     [pos]
   );
@@ -185,13 +186,21 @@ export default function NowPlaying() {
           title="Drag to move"
         >
           <div className="flex items-center gap-2 min-w-0">
-            <div className="h-2 w-2 rounded-full bg-emerald-400/80" />
-            <div className="text-[10px] uppercase tracking-[0.28em] text-neutral-400 truncate">
-              Noir Radio
+            {playing ? (
+              <div className="flex items-end gap-[2px] h-3 w-3">
+                <motion.div animate={{ height: ["4px", "12px", "4px"] }} transition={{ repeat: Infinity, duration: 0.8 }} className="w-1 bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+                <motion.div animate={{ height: ["8px", "4px", "10px", "8px"] }} transition={{ repeat: Infinity, duration: 0.6 }} className="w-1 bg-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+                <motion.div animate={{ height: ["6px", "12px", "6px"] }} transition={{ repeat: Infinity, duration: 0.7 }} className="w-1 bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+              </div>
+            ) : (
+              <div className="h-2 w-2 rounded-sm bg-neutral-600" />
+            )}
+            <div className="text-[10px] font-black uppercase tracking-[0.28em] text-white truncate shadow-[0_0_10px_rgba(255,255,255,0.2)]">
+              MM Radio
             </div>
             {busy ? (
-              <span className="text-[10px] uppercase tracking-[0.22em] text-neutral-500">
-                working…
+              <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-red-400 animate-pulse">
+                SYNCING...
               </span>
             ) : null}
           </div>
@@ -225,11 +234,13 @@ export default function NowPlaying() {
         </div>
 
         {/* Body */}
-        <div className="p-4">
-          <div className="min-w-0">
-            <div className="font-semibold truncate">{current?.title || "—"}</div>
-            <div className="text-xs text-neutral-400 truncate">
-              {current?.artist || "Mileage Mafia"}
+        <div className="p-4 bg-gradient-to-br from-neutral-900/80 to-black/90">
+          <div className="min-w-0 flex items-center justify-between">
+            <div>
+              <div className="font-black text-white text-sm truncate uppercase tracking-widest">{current?.title || "OFFLINE"}</div>
+              <div className="text-[10px] text-cyan-400 font-bold uppercase tracking-[0.2em] truncate mt-1">
+                {current?.artist || "Syndicate Broadcast"}
+              </div>
             </div>
           </div>
 

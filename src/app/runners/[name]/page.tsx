@@ -1,6 +1,7 @@
 import ProgressRing from "@/components/ProgressRing";
 import WeeklyBars from "@/components/WeeklyBars";
 import RunnerCharts from "@/components/RunnerCharts";
+import RunnerProfileClient from "@/components/RunnerProfileClient";
 import { getSheet } from "@/lib/sheets";
 
 export const dynamic = "force-dynamic";
@@ -400,8 +401,8 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
     requiredKmPerDay <= 0
       ? { label: "—", sub: "Set annual target" }
       : daysAheadBehind >= 0
-      ? { label: `${Math.round(daysAheadBehind)} days ahead`, sub: `+${fmtKm(kmDelta)} km vs plan` }
-      : { label: `${Math.abs(Math.round(daysAheadBehind))} days behind`, sub: `${fmtKm(kmDelta)} km vs plan` };
+        ? { label: `${Math.round(daysAheadBehind)} days ahead`, sub: `+${fmtKm(kmDelta)} km vs plan` }
+        : { label: `${Math.abs(Math.round(daysAheadBehind))} days behind`, sub: `${fmtKm(kmDelta)} km vs plan` };
 
   // ===== Projected completion date (median-based, less sensitive to spikes) =====
   const N = 6;
@@ -433,180 +434,28 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
 
   // ===== RENDER =====
   return (
-    <main className="min-h-screen bg-neutral-950 text-white">
-      <div className="max-w-4xl mx-auto px-6 py-16 space-y-10">
-        {isBonusLeader ? (
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-lime-400/20 ring-1 ring-lime-400/30 text-lime-200 font-semibold">
-            +₹1000 Bonus
-          </div>
-        ) : null}
-
-        <div className="flex items-end justify-between gap-6">
-          <h1 className="text-5xl sm:text-6xl font-black tracking-tight">{runner.name}</h1>
-          <div className="text-neutral-400 text-lg">
-            Rank <span className="text-white font-bold">#{runner.rank}</span>
-          </div>
-        </div>
-
-        {/* HERO */}
-        <section className={`rounded-3xl p-10 ring-1 bg-neutral-900/70 ${level.cardBg} ${level.cardRing}`}>
-          <div className="flex flex-col sm:flex-row items-start justify-between gap-10">
-            <div>
-              <div className="text-neutral-300/80 text-sm mb-2">Yearly KM</div>
-
-              <div className={`text-6xl font-black tabular-nums leading-none ${level.accentText}`}>
-                {fmtKm(runner.yearlyKm)}
-                <span className="text-xl text-neutral-300/70 ml-2">km</span>
-              </div>
-
-              <div className={`inline-flex items-center gap-2 mt-5 px-4 py-2 rounded-full ${level.badge}`}>
-                <span className="text-xs uppercase tracking-wider opacity-80">Mafia Level</span>
-                <span className="opacity-70">•</span>
-                <span className="font-extrabold">{level.name}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end">
-              <ProgressRing value={pct} size={130} stroke={10} sublabel="Completion" color={level.ringColor} />
-            </div>
-          </div>
-
-          <div className="mt-10">
-            <div className="h-3 bg-neutral-900/60 rounded-full overflow-hidden">
-              <div className={`h-full ${level.accentBar}`} style={{ width: `${clamp(pct, 0, 100)}%` }} />
-            </div>
-
-            <div className="text-neutral-300/80 text-sm mt-4">
-              <span>
-                Annual target: <span className="text-white font-semibold">{fmtKm(annualTarget)} km</span>
-              </span>
-              <span className="text-neutral-500"> {" • "} </span>
-              <span>
-                85% safety: <span className="text-white font-semibold">{fmtKm(minRequired)} km</span>
-              </span>
-              <span className="text-neutral-500"> {" • "} </span>
-              <span>
-                To safety: <span className="text-white font-semibold">{fmtKm(kmToSafety)} km</span>
-              </span>
-            </div>
-
-            {/* Next level progress */} 
-            <div className="mt-6">
-              <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-                <div className="text-neutral-300 font-semibold">Hierarchy progress</div>
-
-                {tier.next ? (
-                  <div className="text-neutral-400 text-sm">
-                    <span className="text-white font-semibold tabular-nums">{fmtKm(tier.kmToNext)}</span>{" "}
-                    km to <span className="text-white font-semibold">{tier.next.name}</span>
-                  </div>
-                ) : (
-                  <div className="text-neutral-400 text-sm">
-                    <span className="text-white font-semibold">Top tier</span> 🥃
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-3 h-3 bg-neutral-900/60 rounded-full overflow-hidden">
-                <div
-  className={`h-full ${tier.next ? tier.next.accentBar : tier.current.accentBar}`}
-  style={{ width: `${tier.pct}%` }}
-/><div className={`h-full ${level.accentBar}`} style={{ width: `${tier.pct}%` }} />
-              </div>
-
-              <div className="mt-3 text-neutral-500 text-xs">
-                {tier.next ? (
-                  <span>
-                    Progress inside <span className="text-neutral-300">{tier.current.name}</span> ({tier.curMin} →{" "}
-                    {tier.nextMin} km)
-                  </span>
-                ) : (
-                  <span>
-                    You’re at <span className="text-neutral-300">{tier.current.name}</span> ({tier.curMin}+ km)
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* METRICS */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          <Stat label="Weekly Target" value={weeklyTarget ? `${fmtKm(weeklyTarget)} km` : "—"} />
-          <Stat label="Weeks Logged" value={String(activeWeeks)} />
-          <Stat label="Avg KM (last 4 weeks)" value={`${fmtKm(avgLast4)} km`} sub="Mean of last 4 completed weeks" />
-          <Stat label="🔥 Running Streak" value={`${runStreak} weeks`} />
-          <Stat label="🎯 Target Hit Rate" value={weeklyTarget ? `${targetHitRate.toFixed(0)}%` : "—"} />
-          <Stat label="⏱️ Pace vs Plan" value={daysBadge.label} sub={daysBadge.sub} />
-          <Stat
-            label="📅 Projected Finish"
-            value={projectedDate ? fmtDate(projectedDate) : annualTarget > 0 ? "—" : "Set annual target"}
-            sub={projectedDate ? projectionNote : annualTarget > 0 ? "Need more weekly data" : ""}
-          />
-          <Stat label="📈 Best Week" value={bestWeek ? `W${bestWeek.weekNum} • ${fmtKm(bestWeek.km)} km` : "—"} />
-          <Stat label="📉 Worst Week" value={worstWeek ? `W${worstWeek.weekNum} • ${fmtKm(worstWeek.km)} km` : "—"} />
-        </section>
-
-        {/* ACCEPTED CONTRACTS */}
-        <section className="bg-neutral-900/70 rounded-3xl p-8 ring-1 ring-neutral-800">
-          <div className="text-neutral-400 text-xs uppercase tracking-wider">Paper</div>
-          <div className="text-2xl font-bold mt-2">Active Contracts</div>
-          <div className="text-neutral-500 text-sm mt-1">Clauses this runner has signed. Permanent record.</div>
-
-          {acceptedContracts.length === 0 ? (
-            <div className="mt-6 text-neutral-500 text-sm">No accepted contracts yet.</div>
-          ) : (
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              {acceptedContracts.map((c) => (
-                <div key={c.contractId} className="rounded-2xl ring-1 ring-neutral-800 bg-neutral-950/40 p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs uppercase tracking-[0.3em] text-neutral-500">{c.period}</div>
-                    <div className="text-xs text-neutral-500">{fmtAcceptedTs(c.ts)}</div>
-                  </div>
-
-                  <div className="mt-2 text-lg font-semibold text-white">{c.title}</div>
-
-                  <div className="mt-2 text-xs text-neutral-500">
-                    ID: <span className="text-neutral-300">{c.contractId}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* WEEKLY BARS */}
-        <section className="bg-neutral-900/70 rounded-3xl p-8 ring-1 ring-neutral-800">
-          <div className="text-neutral-400 text-xs uppercase tracking-wider">Trend</div>
-          <div className="text-xl font-bold mt-2">Last 12 completed weeks</div>
-
-          <div className="mt-6">
-            <WeeklyBars data={weeklyBars} target={weeklyTarget} colorClass={level.accentBar} />
-          </div>
-
-          {weekly.length === 0 ? (
-            <div className="text-neutral-500 text-sm mt-4">No completed weekly data found yet for this runner.</div>
-          ) : null}
-        </section>
-
-        {/* CHARTS */}
-        <section className="space-y-4">
-          <div>
-            <div className="text-neutral-400 text-xs uppercase tracking-wider"></div>
-            <div className="text-2xl font-bold mt-2">Graphs</div>
-            <div className="text-neutral-500 text-sm mt-1">
-              Weekly KM + rolling average + <span className="text-neutral-300">cumulative vs expected</span>.
-            </div>
-          </div>
-
-          <RunnerCharts data={chartData.slice(-16)} weeklyTarget={weeklyTarget} />
-
-          {chartData.length === 0 ? (
-            <div className="text-neutral-500 text-sm">Add weekly KM rows in Sheets to unlock graphs.</div>
-          ) : null}
-        </section>
-      </div>
-    </main>
+    <RunnerProfileClient
+      runner={runner}
+      level={level}
+      tier={tier}
+      isBonusLeader={isBonusLeader}
+      annualTarget={annualTarget}
+      weeklyTarget={weeklyTarget}
+      minRequired={minRequired}
+      kmToSafety={kmToSafety}
+      activeWeeks={activeWeeks}
+      avgLast4={avgLast4}
+      runStreak={runStreak}
+      targetHitRate={targetHitRate}
+      daysBadge={daysBadge}
+      projectedDateFmt={projectedDate ? fmtDate(projectedDate) : annualTarget > 0 ? "—" : "Set annual target"}
+      projectionNote={projectedDate ? projectionNote : annualTarget > 0 ? "Need more weekly data" : ""}
+      bestWeek={bestWeek}
+      worstWeek={worstWeek}
+      acceptedContracts={acceptedContracts}
+      weeklyBars={weeklyBars}
+      chartData={chartData}
+    />
   );
 }
 

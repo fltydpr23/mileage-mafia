@@ -1,7 +1,17 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+
 import { useRouter } from "next/navigation";
+import { DotGothic16 } from "next/font/google";
+import { motion, AnimatePresence } from "framer-motion";
+import TronTrack3D from "@/components/TronTrack3D";
+import { useAudio } from "@/components/AudioProvider";
+
+const dotGothic = DotGothic16({
+  weight: "400",
+  subsets: ["latin"],
+});
 
 function clsx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
@@ -14,48 +24,35 @@ export default function LoginDoorPage() {
   const [errFlash, setErrFlash] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const pwRef = useRef<HTMLInputElement | null>(null);
-  const [showForgot, setShowForgot] = useState(false);
+
   // UX: ambience first, then reveal text slowly
-  const [showTitle, setShowTitle] = useState(true);
-  const [showPrompt, setShowPrompt] = useState(true);
+  const [showGrid, setShowGrid] = useState(false);
+  const [showUI, setShowUI] = useState(false);
 
-  const [hintOpen, setHintOpen] = useState(false);
+  // Transition State
+  const [isWarping, setIsWarping] = useState(false);
 
-  const timersRef = useRef<number[]>([]);
-  const clearTimers = useCallback(() => {
-    timersRef.current.forEach((id) => window.clearTimeout(id));
-    timersRef.current = [];
-  }, []);
+  const { playMusic } = useAudio();
 
   useEffect(() => {
-    // visuals on mount
-    setShowTitle(true);
-    setShowPrompt(true);
-    setShowForgot(false);
-    setHintOpen(false);
-    clearTimers();
-
-    // reveal forgot-password after a couple seconds
-    const t3 = window.setTimeout(() => setShowForgot(true), 2200);
-    timersRef.current.push(t3);
-
-    // focus password quickly after paint
-    const tF = window.setTimeout(() => {
-      requestAnimationFrame(() => pwRef.current?.focus());
-    }, 120);
-    timersRef.current.push(tF);
-
-    return () => clearTimers();
-  }, [clearTimers]);
+    // Pure black for 4s, then fade in grid
+    const tGrid = setTimeout(() => setShowGrid(true), 4000);
+    // 2s later, fade in text UI
+    const tUI = setTimeout(() => setShowUI(true), 6000);
+    return () => {
+      clearTimeout(tGrid);
+      clearTimeout(tUI);
+    }
+  }, []);
 
   const onSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      if (submitting) return;
+      if (submitting || isWarping) return;
 
       if (!pw.trim()) {
         setErrFlash(true);
-        window.setTimeout(() => setErrFlash(false), 450);
+        setTimeout(() => setErrFlash(false), 450);
         return;
       }
 
@@ -73,111 +70,140 @@ export default function LoginDoorPage() {
         if (!data.ok) {
           setPw("");
           setErrFlash(true);
-          window.setTimeout(() => setErrFlash(false), 650);
+          setTimeout(() => setErrFlash(false), 650);
           requestAnimationFrame(() => pwRef.current?.focus());
           return;
         }
 
-        // ✅ allow next pages (simple gate)
+        // Access Granted -> Trigger Warp Speed Transition
         try {
           sessionStorage.setItem("mm_pw_ok", "1");
-        } catch {}
+        } catch { }
 
-        router.push("/login/invocation");
+        // Start the music exactly as the warp jump triggers
+        playMusic(0).catch(() => { });
+
+        setIsWarping(true);
+        setShowUI(false); // hide UI during warp
+
+        // Wait for warp visual effect to peak before routing
+        setTimeout(() => {
+          router.push("/leaderboard");
+        }, 1500);
+
       } finally {
         setSubmitting(false);
       }
     },
-    [pw, submitting, router]
+    [pw, submitting, isWarping, router]
   );
 
   return (
     <main className="fixed inset-0 bg-black text-white overflow-hidden">
-      {/* CRT/static layers */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 mm-static opacity-[0.26] mix-blend-screen" />
-        <div className="absolute inset-0 mm-scanlines opacity-[0.20] mix-blend-screen" />
-        <div className="absolute inset-0 mm-vignette" />
-      </div>
 
-      <div className="relative h-full w-full grid place-items-center px-6">
-        <form onSubmit={onSubmit} className="w-full max-w-[520px]">
-          <div className="text-center">
-            <div
-              className={clsx(
-                "select-none",
-                "text-[11px] sm:text-[12px]",
-                "text-neutral-200",
-                "leading-none",
-                "transition-opacity duration-[1200ms] ease-out",
-                showTitle ? "opacity-100" : "opacity-0"
-              )}
-              style={{
-                fontFamily:
-                  "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, 'Segoe UI', Roboto, sans-serif",
-                letterSpacing: "0.16em",
-                textTransform: "uppercase",
-                whiteSpace: "nowrap",
-              }}
+      {/* 3D Immersive Track Background */}
+      <AnimatePresence>
+        {(showGrid || isWarping) && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 3, ease: "easeOut" }}
+            className="absolute inset-0 z-0"
+          >
+            <TronTrack3D runners={[]} activeRunner={null} isWarping={isWarping} showTrack={isWarping} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* CRT/static layers overlaying track */}
+      <AnimatePresence>
+        {(showGrid || isWarping) && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.4 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 3 }}
+            className="pointer-events-none absolute inset-0 z-0"
+          >
+            <div className="absolute inset-0 mm-static mix-blend-screen" />
+            <div className="absolute inset-0 mm-scanlines mix-blend-screen" />
+            <div className="absolute inset-0 mm-vignette" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="relative z-10 h-full w-full grid place-items-center px-6">
+        <AnimatePresence>
+          {showUI && (
+            <motion.form
+              initial={{ opacity: 0, y: 10, filter: "blur(10px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              exit={{ opacity: 0, y: -20, scale: 1.05, filter: "blur(10px)", transition: { duration: 0.4 } }}
+              transition={{ duration: 2.5, ease: "easeOut" }}
+              onSubmit={onSubmit}
+              className="w-full max-w-[520px] pb-32"
             >
-              mileage mafia
-            </div>
+              <div className="text-center">
+                <div
+                  className={clsx(
+                    "select-none",
+                    "text-[24px] sm:text-[32px]",
+                    "font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-cyan-500",
+                    "leading-none drop-shadow-[0_0_15px_rgba(0,255,255,0.4)]",
+                    dotGothic.className
+                  )}
+                  style={{
+                    textTransform: "uppercase",
+                    whiteSpace: "nowrap",
+                    letterSpacing: "0.15em",
+                  }}
+                >
+                  mileage mafia
+                </div>
 
-            <div className="mt-10 flex items-center justify-center font-mono text-[14px] sm:text-[15px] text-neutral-200">
-              <span className={clsx("mr-2 transition-opacity duration-500", showPrompt ? "opacity-100" : "opacity-0")}>
-                &gt;
-              </span>
+                <div className="mt-14 relative flex items-center justify-start w-[min(320px,78vw)] mx-auto font-mono text-[14px] sm:text-[15px] text-cyan-400">
+                  <span className="absolute -left-6 opacity-80 animate-pulse">
+                    &gt;
+                  </span>
 
-              <input
-                ref={pwRef}
-                type="password"
-                value={pw}
-                onChange={(e) => setPw(e.target.value)}
-                autoComplete="current-password"
-                enterKeyHint="go"
-                spellCheck={false}
-                disabled={submitting}
-                className={clsx(
-                  "bg-transparent outline-none",
-                  "w-[min(360px,78vw)]",
-                  "text-neutral-100",
-                  "placeholder:text-neutral-700",
-                  errFlash ? "mm-shake" : ""
+                  <input
+                    ref={pwRef}
+                    type="password"
+                    value={pw}
+                    onChange={(e) => setPw(e.target.value)}
+                    autoComplete="current-password"
+                    enterKeyHint="go"
+                    spellCheck={false}
+                    disabled={submitting || isWarping}
+                    className={clsx(
+                      "w-full bg-transparent outline-none",
+                      "text-white tracking-[0.3em] relative z-10",
+                      "placeholder:text-cyan-900/50",
+                      "border-b border-cyan-800 focus:border-cyan-400 transition-colors pb-1",
+                      errFlash ? "mm-shake border-red-500 text-red-400" : ""
+                    )}
+                    placeholder="ENTER OPERATIVE CODE"
+                    aria-label="Password"
+                    autoFocus
+                  />
+                </div>
+
+                {isWarping && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="mt-8 text-cyan-400 font-bold tracking-widest uppercase text-sm animate-pulse"
+                  >
+                    ACCESS GRANTED. INITIALIZING WARP...
+                  </motion.div>
                 )}
-                style={{ opacity: showPrompt ? 1 : 0, transition: "opacity 520ms ease" }}
-                aria-label="Password"
-              />
-            </div>
 
-            {/* Forgot password under input */}
-            <div
-              className={clsx(
-                "mt-4 transition-opacity duration-[900ms] ease-out",
-                showForgot ? "opacity-100" : "opacity-0 pointer-events-none"
-              )}
-            >
-              <button
-                type="button"
-                onClick={() => setHintOpen((v) => !v)}
-                className="text-[11px] tracking-[0.12em] uppercase text-neutral-500 hover:text-neutral-300 transition"
-              >
-                forgot your password?
-              </button>
-
-              <div
-                className={clsx(
-                  "mt-3 text-[11px] tracking-[0.18em] uppercase text-neutral-300",
-                  "transition-all duration-500 ease-out",
-                  hintOpen ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1 pointer-events-none"
-                )}
-              >
-                respect all...?
+                <button type="submit" className="hidden" aria-hidden />
               </div>
-            </div>
-
-            <button type="submit" className="hidden" aria-hidden />
-          </div>
-        </form>
+            </motion.form>
+          )}
+        </AnimatePresence>
       </div>
 
       <style>{`

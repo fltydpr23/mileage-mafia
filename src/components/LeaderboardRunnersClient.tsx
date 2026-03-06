@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
@@ -165,55 +165,56 @@ export default function LeaderboardRunnersClient({
   const canCompare = selected.length >= 2;
 
   return (
-    <>
+    <div className="mt-8">
       {/* Leaderboard header + Compare button */}
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex items-end justify-between gap-4 mb-4">
         <div>
-          <p className="text-neutral-400 text-xs uppercase tracking-wider">
-            Leaderboard
+          <p className="text-emerald-500 text-[10px] uppercase tracking-widest font-bold flex items-center gap-2">
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+            GLOBAL DATABASE
           </p>
 
-          <div className="mt-1 flex items-center gap-2">
-            <h3 className="text-xl sm:text-2xl font-bold">Runners</h3>
+          <div className="mt-2 flex items-center gap-4">
+            <h3 className="text-2xl sm:text-3xl font-bold tracking-tight">All Agents</h3>
 
             <button
               type="button"
               onClick={toggleCompare}
               className={clsx(
-                "px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-[0.18em] ring-1 transition",
+                "px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest ring-1 transition-all",
                 compareOn
-                  ? "bg-emerald-500/10 text-emerald-200 ring-emerald-500/25"
-                  : "bg-white/5 text-neutral-200 ring-white/10 hover:bg-white/10"
+                  ? "bg-emerald-500/10 text-emerald-400 ring-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)]"
+                  : "bg-white/5 text-neutral-400 ring-white/10 hover:ring-white/20 hover:text-white"
               )}
               title="Select up to 4 runners"
             >
-              Compare{compareOn ? ` (${selected.length}/4)` : ""}
+              COMPARE {compareOn ? `(${selected.length}/4)` : ""}
             </button>
           </div>
         </div>
 
-        <p className="text-neutral-500 text-sm text-right">
-          Sorted by{" "}
-          <span className="text-neutral-300">{sortLabel}</span>
+        <p className="text-neutral-500 text-[10px] uppercase tracking-widest text-right">
+          SORT_BY:{" "}
+          <span className="text-neutral-300 font-bold">{sortLabel}</span>
         </p>
       </div>
 
       {/* List */}
-      <section className="rounded-3xl bg-neutral-900/70 ring-1 ring-neutral-800 overflow-hidden">
+      <section className="rounded-3xl bg-neutral-900/40 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.5)] overflow-hidden">
         <div
-          className="hidden sm:block sticky z-30 bg-neutral-950/90 backdrop-blur-xl border-b border-neutral-800"
+          className="hidden sm:block sticky z-30 bg-neutral-900/80 backdrop-blur-md border-b border-white/5"
           style={{ top: appHeaderH, height: listHeaderH }}
         >
-          <div className="grid grid-cols-12 gap-4 px-6 md:px-8 h-full items-center text-xs uppercase tracking-wider text-neutral-500">
-            <div className="col-span-1">#</div>
-            <div className="col-span-6">Runner</div>
-            <div className="col-span-2 text-right">KM</div>
-            <div className="col-span-2 text-right">%</div>
+          <div className="grid grid-cols-12 gap-4 px-6 md:px-8 h-full items-center text-[10px] uppercase tracking-widest text-neutral-400 font-bold">
+            <div className="col-span-1 border-r border-white/5">#</div>
+            <div className="col-span-6 border-r border-white/5 px-4">AGENT IDENT</div>
+            <div className="col-span-2 text-right border-r border-white/5 px-4">DISTANCE</div>
+            <div className="col-span-2 text-right border-r border-white/5 px-4">POWER</div>
             <div className="col-span-1 text-right" />
           </div>
         </div>
 
-        <div className="divide-y divide-neutral-800 sm:pt-[56px]">
+        <div className="divide-y divide-white/5 sm:pt-[56px]">
           {sorted.map((r, idx) => {
             const lvl = getMafiaLevel(r.yearlyKm);
             const pct = Math.min(Math.max(r.completion, 0), 100);
@@ -292,10 +293,11 @@ export default function LeaderboardRunnersClient({
                 </div>
 
                 {/* DESKTOP */}
-                <div className="hidden sm:block px-6 md:px-8 py-6 hover:bg-white/5 transition">
+                <div className="hidden sm:block px-6 md:px-8 py-5 hover:bg-white/5 transition-colors relative group/row">
+                  <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-transparent group-hover/row:bg-emerald-500 transition-colors" />
                   <div className="grid grid-cols-12 gap-4 items-center">
-                    <div className="col-span-1 text-neutral-400 font-semibold tabular-nums">
-                      {rankShown}
+                    <div className="col-span-1 text-neutral-500 font-semibold tabular-nums text-sm">
+                      {rankShown < 10 ? `0${rankShown}` : rankShown}
                     </div>
 
                     <div className="col-span-6 min-w-0">
@@ -309,23 +311,23 @@ export default function LeaderboardRunnersClient({
                         <div className="min-w-0 w-full">
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0 flex items-center gap-2">
-                              <p className="font-bold text-lg truncate">{r.name}</p>
+                              <p className="font-bold tracking-tight text-lg truncate group-hover/row:text-white transition-colors">{r.name}</p>
 
                               {isLeader ? (
-                                <span className="shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold bg-emerald-500/10 ring-1 ring-emerald-500/20 text-emerald-200">
+                                <span className="shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/10 ring-1 ring-emerald-500/20 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
                                   +₹ 1,000
                                 </span>
                               ) : null}
 
                               {isPenalized ? (
-                                <span className="shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold bg-red-500/10 text-red-200 ring-1 ring-red-500/20">
+                                <span className="shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-red-500/10 text-red-400 ring-1 ring-red-500/20">
                                   -₹ 500
                                 </span>
                               ) : null}
                             </div>
 
                             <span
-                              className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-extrabold ${lvl.pill}`}
+                              className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${lvl.pill}`}
                             >
                               {lvl.name}
                             </span>
@@ -350,18 +352,18 @@ export default function LeaderboardRunnersClient({
                       <p className="text-white font-semibold tabular-nums text-lg">
                         {Math.round(r.yearlyKm).toLocaleString("en-IN")}
                       </p>
-                      <p className="text-neutral-500 text-xs">km</p>
+                      <p className="text-neutral-500 text-[10px] uppercase font-bold tracking-widest mt-0.5">KM</p>
                     </div>
 
                     <div className="col-span-2 text-right">
                       <p className="text-white font-semibold tabular-nums text-lg">
                         {pct.toFixed(1)}
                       </p>
-                      <p className="text-neutral-500 text-xs">%</p>
+                      <p className="text-neutral-500 text-[10px] uppercase font-bold tracking-widest mt-0.5">PWR</p>
                     </div>
 
-                    <div className="col-span-1 text-right text-neutral-500">
-                      <span className="text-2xl leading-none">›</span>
+                    <div className="col-span-1 text-right text-neutral-600 group-hover/row:text-emerald-500 transition-colors">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block"><path d="M9 18l6-6-6-6" /></svg>
                     </div>
                   </div>
                 </div>
@@ -420,14 +422,14 @@ export default function LeaderboardRunnersClient({
       {compareOn ? (
         <div className="fixed inset-x-0 bottom-0 z-50 px-4 sm:px-6 pb-4">
           <div className="mx-auto max-w-6xl">
-            <div className="rounded-3xl bg-neutral-950/75 backdrop-blur-xl ring-1 ring-neutral-800 shadow-[0_18px_70px_rgba(0,0,0,0.65)] px-4 sm:px-5 py-4">
+            <div className="rounded-2xl bg-neutral-900/80 backdrop-blur-xl ring-1 ring-white/10 shadow-[0_18px_70px_rgba(0,0,0,0.65)] px-4 sm:px-6 py-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-[10px] uppercase tracking-[0.28em] text-neutral-500">
-                    Compare
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">
+                    Compare Mode Active
                   </div>
 
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
                     {selected.length === 0 ? (
                       <span className="text-neutral-400 text-sm">
                         Select up to 4 runners.
@@ -438,7 +440,7 @@ export default function LeaderboardRunnersClient({
                           key={name}
                           type="button"
                           onClick={() => toggleRunner(name)}
-                          className="px-3 py-1 rounded-full bg-white/5 ring-1 ring-white/10 text-neutral-200 text-xs font-semibold hover:bg-white/10 transition"
+                          className="px-3 py-1 rounded-full bg-white/5 ring-1 ring-white/10 text-neutral-200 text-xs font-medium hover:bg-white/10 transition-all"
                           title="Remove"
                         >
                           {name} <span className="text-neutral-500 ml-1">×</span>
@@ -447,16 +449,16 @@ export default function LeaderboardRunnersClient({
                     )}
                   </div>
 
-                  <div className="mt-2 text-xs text-neutral-600">
+                  <div className="mt-2 text-[10px] uppercase tracking-widest text-neutral-500 font-bold">
                     {selected.length < 2 ? "Pick at least 2 to compare." : "Ready."}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-3 shrink-0">
                   <button
                     type="button"
                     onClick={clear}
-                    className="px-4 py-2 rounded-2xl bg-white/5 ring-1 ring-white/10 text-neutral-200 text-xs font-extrabold uppercase tracking-[0.18em] hover:bg-white/10 transition"
+                    className="px-4 py-2 rounded-xl bg-white/5 ring-1 ring-white/10 text-neutral-300 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-colors"
                   >
                     Clear
                   </button>
@@ -467,19 +469,19 @@ export default function LeaderboardRunnersClient({
                       if (!canCompare) e.preventDefault();
                     }}
                     className={clsx(
-                      "px-4 py-2 rounded-2xl text-xs font-extrabold uppercase tracking-[0.18em] transition",
+                      "px-6 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all",
                       canCompare
-                        ? "bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500/25 hover:bg-emerald-500/20"
-                        : "bg-white/5 text-neutral-500 ring-1 ring-white/10 cursor-not-allowed"
+                        ? "bg-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:bg-emerald-400 hover:-translate-y-0.5"
+                        : "bg-neutral-800 text-neutral-500 cursor-not-allowed"
                     )}
                   >
-                    Compare →
+                    Compare
                   </Link>
 
                   <button
                     type="button"
                     onClick={() => setParams(false, [])}
-                    className="px-4 py-2 rounded-2xl bg-white text-black text-xs font-extrabold uppercase tracking-[0.18em] hover:opacity-90 transition"
+                    className="px-4 py-2 rounded-xl bg-white text-black text-[10px] font-bold uppercase tracking-widest hover:bg-neutral-100 transition-colors"
                     title="Exit compare mode"
                   >
                     Done
@@ -487,14 +489,14 @@ export default function LeaderboardRunnersClient({
                 </div>
               </div>
 
-              <div className="mt-3 text-[10px] uppercase tracking-[0.28em] text-neutral-700">
+              <div className="mt-3 text-[10px] uppercase tracking-widest text-neutral-600 font-medium">
                 Tip: the URL becomes shareable.
               </div>
             </div>
           </div>
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 
