@@ -40,6 +40,8 @@ type AudioApi = {
   setVolume: (v: number) => void;
   seek: (sec: number) => void;
   toggle: () => void;
+  play: () => Promise<void>;
+  pause: () => void;
   next: () => void;
   prev: () => void;
   unlock: () => Promise<void>;
@@ -310,6 +312,28 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       }).catch(() => {});
     }
   }, []);
+ 
+  const play = useCallback(async () => {
+    const a = audioEl.current;
+    if (!a) return;
+    const id = ++opId.current;
+    a.volume = clamp01(volumeRef.current);
+    try {
+      await a.play();
+      if (id === opId.current) setPlaying(true);
+    } catch (err) {
+      console.warn("[AudioProvider] play failed:", err);
+    }
+  }, []);
+ 
+  const pause = useCallback(() => {
+    const a = audioEl.current;
+    if (!a) return;
+    try {
+      a.pause();
+      setPlaying(false);
+    } catch {}
+  }, []);
 
   const next = useCallback(() => {
     const list = PLAYLISTS[stationRef.current];
@@ -347,10 +371,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const api = useMemo<AudioApi>(() => ({
     playing, unlocked, current, currentTime, duration, volume, activeStationId,
-    setVolume, seek, toggle, next, prev, unlock, recover,
+    setVolume, seek, toggle, play, pause, next, prev, unlock, recover,
     startStation, changeStation,
   }), [playing, unlocked, current, currentTime, duration, volume, activeStationId,
-       setVolume, seek, toggle, next, prev, unlock, recover, startStation, changeStation]);
+       setVolume, seek, toggle, play, pause, next, prev, unlock, recover, startStation, changeStation]);
 
   return <AudioCtx.Provider value={api}>{children}</AudioCtx.Provider>;
 }
