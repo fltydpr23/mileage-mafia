@@ -8,6 +8,9 @@ interface Runner {
     yearlyKm: number;
     completion: number;
     rank: number;
+    weeklyTarget: number;
+    annualTarget: number;
+    runHistory: any[];
 }
 
 interface IsometricTrackProps {
@@ -70,7 +73,7 @@ export default function IsometricTrack({ runners }: IsometricTrackProps) {
                         />
                     </svg>
 
-                    {/* Markers (Agents) */}
+                    {/* Markers (Runners) */}
                     {trackRunners.map((runner, idx) => {
                         // Find max completion to normalize progress for better visualization
                         const maxCompletion = Math.max(...trackRunners.map(r => r.completion), 0.1);

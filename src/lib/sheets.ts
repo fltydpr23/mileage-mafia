@@ -26,11 +26,22 @@ async function getSheetsClient() {
   return { sheets, spreadsheetId };
 }
 
+// ─── Simple In-Memory Cache to prevent 429s ───────────────────────────────────
+const cache = new Map<string, { data: any[][]; timestamp: number }>();
+const CACHE_TTL_MS = 30000; // 30 seconds
+
 /**
  * Read values from a sheet range.
  * Example: getSheet("API_Leaderboard!A2:F200")
  */
 export async function getSheet(rangeA1: string) {
+  const now = Date.now();
+  const cached = cache.get(rangeA1);
+
+  if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
   const { sheets, spreadsheetId } = await getSheetsClient();
 
   const res = await sheets.spreadsheets.values.get({
@@ -38,7 +49,17 @@ export async function getSheet(rangeA1: string) {
     range: rangeA1,
   });
 
-  return res.data.values ?? [];
+  const data = res.data.values ?? [];
+  cache.set(rangeA1, { data, timestamp: now });
+  return data;
+}
+
+export function clearSheetCache(rangeA1?: string) {
+  if (rangeA1) {
+    cache.delete(rangeA1);
+  } else {
+    cache.clear();
+  }
 }
 
 /**
@@ -57,4 +78,23 @@ export async function appendRow(rangeA1: string, values: (string | number)[]) {
       values: [values],
     },
   });
+  
+  clearSheetCache();
+}
+
+/**
+ * Overwrite a range with the given 2D array of values.
+ * Example: writeSheet("_StravaTokens!A2:D2", [["tok", "ref", "123", ""]])
+ */
+export async function writeSheet(rangeA1: string, values: (string | number)[][]) {
+  const { sheets, spreadsheetId } = await getSheetsClient();
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: rangeA1,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
+  
+  clearSheetCache();
 }

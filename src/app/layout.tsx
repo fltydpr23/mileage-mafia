@@ -21,6 +21,13 @@ export const metadata: Metadata = {
   description: "Mileage Mafia leaderboard + runner pages",
 };
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{

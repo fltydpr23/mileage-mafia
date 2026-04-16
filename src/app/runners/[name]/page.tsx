@@ -207,27 +207,68 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
   const urlName = decodeURIComponent(name);
   const routeName = norm(urlName);
 
-  // A Name | B Yearly KM | C Completion % | D Rank | E Weekly Target | F Annual Target
-  const raw = await getSheet("API_Leaderboard!A2:F200");
-  const rows = (raw ?? []).map((r) => ({
-    name: String(r?.[0] ?? ""),
-    yearlyKm: toNum(r?.[1]),
-    completionText: String(r?.[2] ?? ""),
-    rank: String(r?.[3] ?? ""),
-    weeklyTarget: toNum(r?.[4]),
-    annualTarget: toNum(r?.[5]),
-  }));
+  // A Name | B Yearly KM | C Completion % | D Rank | E Weekly Target | F Annual Target | G RunHistory JSON
+  const isManual = process.env.STATS_SOURCE === "MANUAL";
+  const raw = await getSheet(isManual ? "Leaderboard!A2:M200" : "API_Leaderboard!A2:H200");
+  
+  const rows = (raw ?? []).map((r) => {
+    if (isManual) {
+       // Manual Table Mapping: 
+       // H (7) Rank | I (8) Name | J (9) Annual | K (10) Yearly | L (11) % | M (12) Weekly
+       return {
+         name: String(r?.[8] ?? "").trim(),
+         yearlyKm: toNum(r?.[10]),
+         completionText: String(r?.[11] ?? ""),
+         rank: String(r?.[7] ?? ""),
+         weeklyTarget: toNum(r?.[12]),
+         annualTarget: toNum(r?.[9]),
+         runHistory: [],
+       };
+    }
+
+    let runHistory = [];
+    let summaryStats = null;
+    try {
+      if (r?.[6]) runHistory = JSON.parse(String(r[6]));
+    } catch (err) {
+      console.error("Error parsing runHistory for", r?.[0], err);
+    }
+    try {
+      if (r?.[7]) summaryStats = JSON.parse(String(r[7]));
+    } catch {}
+
+    return {
+      name: String(r?.[0] ?? ""),
+      yearlyKm: toNum(r?.[1]),
+      completion: toPercent(r?.[2]),
+      completionText: String(r?.[2] ?? ""),
+      rank: String(r?.[3] ?? ""),
+      weeklyTarget: toNum(r?.[4]),
+      annualTarget: toNum(r?.[5]),
+      runHistory,
+      summaryStats,
+    };
+  });
 
   const runner = rows.find((r) => norm(r.name) === routeName);
 
-  const leader = rows.reduce(
-    (best, r) => {
-      const p = toPercent(r.completionText);
-      return p > best.pct ? { name: r.name, pct: p } : best;
-    },
-    { name: "", pct: -1 }
-  );
-  const isBonusLeader = runner && norm(runner.name) === norm(leader.name);
+  const sortedRows = [...rows].sort((a, b) => {
+    const rankA = Number(a.rank) || 999;
+    const rankB = Number(b.rank) || 999;
+    if (rankA !== 999 && rankB !== 999 && rankA !== rankB) return rankA - rankB;
+    return toPercent(b.completionText) - toPercent(a.completionText);
+  });
+
+  const top5Runners = sortedRows.slice(0, 5).map(r => ({
+    name: r.name,
+    yearlyKm: r.yearlyKm,
+    completion: toPercent(r.completionText),
+    annualTarget: r.annualTarget,
+    rank: Number(r.rank) || null
+  }));
+
+  const leader = sortedRows[0] || null;
+  const isBonusLeader = runner && leader && norm(runner.name) === norm(leader.name);
 
   if (!runner) {
     return (
@@ -320,11 +361,15 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
 
   // ===== COMPUTE =====
   const pct = toPercent(runner.completionText);
+  runner.completion = pct;
+
   const level = getMafiaLevel(runner.yearlyKm);
   const tier = getTierProgress(runner.yearlyKm);
 
   const annualTarget = runner.annualTarget > 0 ? runner.annualTarget : 0;
   const weeklyTarget = runner.weeklyTarget > 0 ? runner.weeklyTarget : 0;
+
+  // ── Removed the weekly aggregate override to ensure we use the true Strava yearly Total (Column B) ──
 
   const minRequired = Math.round(annualTarget * 0.85);
   const kmToSafety = Math.max(0, minRequired - runner.yearlyKm);
@@ -338,7 +383,8 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
     : 0;
 
   // ===== Chart data: weekly km + roll4 + cumulative + expected cumulative =====
-  const today = new Date();
+  const now = new Date();
+  const today = now;
   const yearNow = today.getFullYear();
   const totalDaysNow = isLeapYear(yearNow) ? 366 : 365;
 
@@ -424,13 +470,40 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
   const remainingKm = Math.max(0, annualTarget - runner.yearlyKm);
 
   const projectedDays = annualTarget > 0 && kmPerDay > 0.05 ? Math.ceil(remainingKm / kmPerDay) : null;
-
   const projectedDate = projectedDays ? addDays(today, projectedDays) : null;
 
   const projectionNote =
     recentWeekKms.length >= 3
       ? `Median of last ${Math.min(N, recentWeekKms.length)} weeks: ~${fmtKm(medianWeekly)} km/wk`
       : `Using pace so far: ~${fmtKm(kmPerDay * 7)} km/wk`;
+
+  // ===== Penalty & Zero Weeks =====
+  // Rule: 2 zero weeks b2b (back-to-back) = 500 rs fine.
+  const jan1 = new Date(yearNow, 0, 1);
+  const diffDays = Math.floor((today.getTime() - jan1.getTime()) / 86400000);
+  const weeksElapsed = Math.max(0, Math.floor((diffDays + jan1.getDay()) / 7));
+
+  // Determine when the runner officially "started" in the system to avoid legacy fines
+  const startWeek = weekly.length > 0 ? Math.min(...weekly.map(w => w.weekNum)) : 1;
+  const activeMap = new Set(weekly.filter(w => w.km > 0).map(w => w.weekNum));
+
+  let mafiaFine = 0;
+  let consecutiveZeros = 0;
+  let zeroWeekCount = 0;
+
+  for (let w = startWeek; w <= weeksElapsed; w++) {
+    if (activeMap.has(w)) {
+      consecutiveZeros = 0;
+    } else {
+      zeroWeekCount++;
+      consecutiveZeros++;
+      if (consecutiveZeros === 2) {
+        mafiaFine += 500;
+        consecutiveZeros = 0; // Reset streak so 4 weeks = 1000, etc.
+      }
+    }
+  }
+  const zeroWeeks = zeroWeekCount;
 
   // ===== RENDER =====
   return (
@@ -455,6 +528,11 @@ export default async function RunnerPage({ params }: { params: Promise<{ name: s
       acceptedContracts={acceptedContracts}
       weeklyBars={weeklyBars}
       chartData={chartData}
+      top5Runners={top5Runners}
+      summaryStats={runner.summaryStats ?? null}
+      zeroWeeks={zeroWeeks}
+      mafiaFine={mafiaFine}
+      serverTime={now.getTime()}
     />
   );
 }

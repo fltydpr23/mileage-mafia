@@ -108,7 +108,7 @@ export default function OathPage() {
     try {
       const prevVol = audio.volume;
       audio.setVolume(0);
-      await audio.playMusic();
+      await audio.startStation(audio.activeStationId);
       audio.pause();
       audio.seek(0);
       audio.setVolume(prevVol);
@@ -178,7 +178,7 @@ export default function OathPage() {
     (async () => {
       try {
         if (!audio.unlocked) await audio.unlock();
-        await audio.playMusic(); // ✅ instant start, no fades
+        await audio.startStation(audio.activeStationId); // ✅ instant start, no fades
       } catch {
         // If something blocks it, NowPlaying has Unlock/Start
         try {

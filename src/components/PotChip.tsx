@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import React, { useMemo, useState } from "react";
+import { Share_Tech_Mono } from "next/font/google";
+
+const shareTech = Share_Tech_Mono({
+  weight: "400",
+  subsets: ["latin"],
+});
 
 function money(n: number) {
   return `₹${Math.round(n).toLocaleString("en-IN")}`;
@@ -48,12 +54,12 @@ export default function PotChip({
     >
       <Link
         href="/pot"
-        className="px-3 sm:px-4 py-2 rounded-full bg-neutral-900/70 ring-1 ring-neutral-800 text-neutral-300 text-xs sm:text-sm inline-flex items-center gap-2 hover:bg-white/[0.04] transition"
+        className="cyber-chip yellow px-4 py-2 text-[10px] font-black tracking-[0.2em] uppercase transition-colors flex items-center gap-2"
         aria-label="Open pot breakdown"
       >
         <span className="text-neutral-500">Pot</span>
-        <span className="text-white font-semibold tabular-nums">{money(total)}</span>
-        <span className="text-neutral-600 text-[12px] leading-none">↗</span>
+        <span className={`text-yellow-400 font-bold tracking-widest ${shareTech.className}`}>{money(total)}</span>
+        <span className="text-yellow-600 text-[12px] leading-none">↗</span>
       </Link>
 
       {/* Hover tooltip */}

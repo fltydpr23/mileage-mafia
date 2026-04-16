@@ -46,14 +46,16 @@ function Chip({
 export default function RunnerCharts({
   data,
   weeklyTarget,
+  totalKm,
 }: {
   data: Row[];
   weeklyTarget: number;
+  totalKm?: number;
 }) {
   const has = Array.isArray(data) && data.length > 0;
 
   const last = has ? data[data.length - 1] : null;
-  const cum = last?.cum ?? 0;
+  const cum = totalKm ?? (last?.cum ?? 0);
   const expected = last?.expectedCum ?? 0;
   const delta = cum - expected;
 

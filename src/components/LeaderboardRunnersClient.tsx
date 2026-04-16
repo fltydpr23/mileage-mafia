@@ -175,7 +175,7 @@ export default function LeaderboardRunnersClient({
           </p>
 
           <div className="mt-2 flex items-center gap-4">
-            <h3 className="text-2xl sm:text-3xl font-bold tracking-tight">All Agents</h3>
+            <h3 className="text-2xl sm:text-3xl font-bold tracking-tight">All Runners</h3>
 
             <button
               type="button"
@@ -207,9 +207,9 @@ export default function LeaderboardRunnersClient({
         >
           <div className="grid grid-cols-12 gap-4 px-6 md:px-8 h-full items-center text-[10px] uppercase tracking-widest text-neutral-400 font-bold">
             <div className="col-span-1 border-r border-white/5">#</div>
-            <div className="col-span-6 border-r border-white/5 px-4">AGENT IDENT</div>
+            <div className="col-span-6 border-r border-white/5 px-4">RUNNER IDENT</div>
             <div className="col-span-2 text-right border-r border-white/5 px-4">DISTANCE</div>
-            <div className="col-span-2 text-right border-r border-white/5 px-4">POWER</div>
+            <div className="col-span-2 text-right border-r border-white/5 px-4">ATH %</div>
             <div className="col-span-1 text-right" />
           </div>
         </div>
@@ -359,7 +359,7 @@ export default function LeaderboardRunnersClient({
                       <p className="text-white font-semibold tabular-nums text-lg">
                         {pct.toFixed(1)}
                       </p>
-                      <p className="text-neutral-500 text-[10px] uppercase font-bold tracking-widest mt-0.5">PWR</p>
+                      <p className="text-neutral-500 text-[10px] uppercase font-bold tracking-widest mt-0.5">ATH</p>
                     </div>
 
                     <div className="col-span-1 text-right text-neutral-600 group-hover/row:text-emerald-500 transition-colors">

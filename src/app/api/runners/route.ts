@@ -9,9 +9,12 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const raw = await getSheet("API_Leaderboard!A2:A200");
+    const isManual = process.env.STATS_SOURCE === "MANUAL";
+    const raw = await getSheet(isManual ? "Leaderboard!A2:M200" : "API_Leaderboard!A2:A200");
+    const nameIdx = isManual ? 8 : 0;
+    
     const names = (raw ?? [])
-      .map((r) => normName(r?.[0]))
+      .map((r) => normName(r?.[nameIdx]))
       .filter((n) => n.length > 0);
 
     // de-dupe
