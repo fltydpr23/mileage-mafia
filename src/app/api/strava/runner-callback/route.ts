@@ -54,10 +54,8 @@ export async function GET(req: NextRequest) {
 
     try {
         // Exchange code for tokens
-        const redirectUri = process.env.STRAVA_REDIRECT_URI?.replace(
-            "/api/strava/callback",
-            "/api/strava/runner-callback"
-        );
+        const origin = new URL(req.url).origin;
+        const redirectUri = `${origin}/api/strava/runner-callback`;
 
         const res = await fetch("https://www.strava.com/oauth/token", {
             method: "POST",

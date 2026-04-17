@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
                 client_secret: process.env.STRAVA_CLIENT_SECRET,
                 code,
                 grant_type: "authorization_code",
+                redirect_uri: `${new URL(req.url).origin}/api/strava/callback`,
             }),
         });
 

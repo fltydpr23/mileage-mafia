@@ -11,13 +11,16 @@ export async function GET(req: NextRequest) {
     }
 
     const clientId = process.env.STRAVA_CLIENT_ID;
-    const redirectUri = process.env.STRAVA_REDIRECT_URI?.replace(
-        "/api/strava/callback",
-        "/api/strava/runner-callback"
-    );
+    
+    // Dynamically detect origin to construct redirect URI
+    const origin = new URL(req.url).origin;
+    const redirectUri = `${origin}/api/strava/runner-callback`;
 
-    if (!clientId || !redirectUri) {
-        return NextResponse.json({ error: "Missing Strava env vars" }, { status: 500 });
+    if (!clientId) {
+        return NextResponse.json({ error: "Missing STRAVA_CLIENT_ID env var" }, { status: 500 });
+    }
+    if (!redirectUri) {
+        return NextResponse.json({ error: "Could not determine redirect URI" }, { status: 500 });
     }
 
     const returnTo = searchParams.get("returnTo") || "join";
