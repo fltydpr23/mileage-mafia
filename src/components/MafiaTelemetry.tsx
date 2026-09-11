@@ -100,14 +100,30 @@ export default function MafiaTelemetry({ runners, globalStats, povHold }: Props)
     const [isHudVisible, setIsHudVisible] = useState<boolean>(true);
     const [tick, setTick] = useState(0);
 
-    // Sort runners by rank
-    const sorted = useMemo(() => [...runners].sort((a, b) => (a.rank || 99) - (b.rank || 99)), [runners]);
+    const [sortBy, setSortBy] = useState<"completion" | "km">("completion");
+
+    // Sort runners by rank based on sortBy state
+    const sorted = useMemo(() => {
+        const list = [...runners];
+        if (sortBy === "km") {
+            list.sort((a, b) => b.yearlyKm - a.yearlyKm);
+        } else {
+            list.sort((a, b) => b.completion - a.completion);
+        }
+        return list.map((r, i) => ({
+            ...r,
+            rank: i + 1,
+        }));
+    }, [runners, sortBy]);
     const leader = sorted[0];
 
     // Set default active runner
     useEffect(() => {
         if (sorted.length > 0 && !activeRunner) setActiveRunner(sorted[0]);
     }, [sorted, activeRunner]);
+
+    // Track if a runner was explicitly tapped on the map to show the HUD on mobile
+    const [showMobileHud, setShowMobileHud] = useState(false);
 
     const gapToLeader = useCallback((runner: Runner) => {
         if (!leader) return 0;
@@ -123,16 +139,38 @@ export default function MafiaTelemetry({ runners, globalStats, povHold }: Props)
     const TimingTower = () => (
         <div className="flex flex-col h-full overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-[#111]">
-                <span className="text-[10px] font-mono font-black tracking-[0.25em] text-white uppercase">Race Classification</span>
-                <div className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-[9px] font-mono text-emerald-400">{globalStats.isManual ? "MANUAL" : "LIVE"}</span>
+            <div className="flex flex-col gap-2 px-3 py-2 border-b border-white/5 bg-[#111]">
+                <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-black tracking-[0.25em] text-white uppercase">Classification</span>
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="text-[9px] font-mono text-emerald-400">{globalStats.isManual ? "MANUAL" : "LIVE"}</span>
+                    </div>
+                </div>
+
+                {/* Sort Toggle */}
+                <div className="grid grid-cols-2 bg-black/60 p-1 rounded-lg border border-white/10 text-[9px] font-mono">
+                    <button
+                        onClick={() => setSortBy("completion")}
+                        className={`py-1 text-center font-bold tracking-wider rounded transition-all ${
+                            sortBy === "completion" ? "bg-[#dc2626] text-white shadow-sm" : "text-zinc-500 hover:text-white"
+                        }`}
+                    >
+                        % TARGET
+                    </button>
+                    <button
+                        onClick={() => setSortBy("km")}
+                        className={`py-1 text-center font-bold tracking-wider rounded transition-all ${
+                            sortBy === "km" ? "bg-white text-black font-black shadow-sm" : "text-zinc-500 hover:text-white"
+                        }`}
+                    >
+                        TOTAL KM
+                    </button>
                 </div>
             </div>
 
             {/* Runner rows */}
-            <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
+            <div className="flex-1 min-h-0 overflow-y-auto touch-pan-y custom-scrollbar" style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
                 {sorted.map((runner, i) => {
                     const isActive = activeRunner?.name === runner.name;
                     const isHovered = hoveredRunner?.name === runner.name;
@@ -413,7 +451,7 @@ export default function MafiaTelemetry({ runners, globalStats, povHold }: Props)
     // ─── RENDER ───────────────────────────────────────────────────────────────
     return (
         <motion.div
-            className="flex-1 flex flex-col overflow-hidden relative"
+            className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative"
             style={{ background: "#0d0d0d" }}
             initial={{ opacity: 0 }}
             animate={{ opacity: povHold ? 0 : 1 }}
@@ -423,7 +461,7 @@ export default function MafiaTelemetry({ runners, globalStats, povHold }: Props)
             <MobileTabBar />
 
             {/* ── MAIN CONTENT ── */}
-            <div className="flex flex-1 overflow-hidden">
+            <div className="flex flex-1 min-h-0 overflow-hidden">
 
                 {/* ── DESKTOP: Left — Timing Tower ── */}
                 <div className={`
@@ -460,18 +498,48 @@ export default function MafiaTelemetry({ runners, globalStats, povHold }: Props)
                                 hoveredRunner={hoveredRunner?.name}
                                 onRunnerSelect={(name) => {
                                     const r = sorted.find(x => x.name === name);
-                                    if (r) setActiveRunner(r);
+                                    if (r) {
+                                        setActiveRunner(r);
+                                        if (window.innerWidth < 1024) {
+                                            setShowMobileHud(true);
+                                        }
+                                    }
                                 }}
                             />
+                            
+                            {/* Mobile Floating HUD Overlay */}
+                            <AnimatePresence>
+                                {showMobileHud && mobileTab === "map" && (
+                                    <>
+                                        <motion.div 
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            exit={{ opacity: 0 }}
+                                            className="absolute inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
+                                            onClick={() => setShowMobileHud(false)}
+                                        />
+                                        <motion.div 
+                                            initial={{ y: "100%" }}
+                                            animate={{ y: 0 }}
+                                            exit={{ y: "100%" }}
+                                            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                                            className="absolute bottom-0 left-0 right-0 z-50 bg-[#111]/90 backdrop-blur-xl border-t border-white/10 rounded-t-3xl max-h-[70vh] overflow-y-auto"
+                                        >
+                                            <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto my-3" />
+                                            <RunnerDetail />
+                                        </motion.div>
+                                    </>
+                                )}
+                            </AnimatePresence>
                         </div>
 
                         {/* Runner detail */}
                         <div className={`
-                            lg:w-[280px] xl:w-[320px] flex-shrink-0 overflow-y-auto
-                            ${mobileTab === "stats" ? "flex flex-col" : "hidden lg:flex lg:flex-col"}
+                            w-full lg:w-[280px] xl:w-[320px] flex-shrink-0 flex flex-col min-h-0 overflow-y-auto custom-scrollbar touch-pan-y
+                            ${mobileTab === "stats" ? "flex flex-1" : "hidden lg:flex lg:flex-col"}
                             ${!isHudVisible ? "!hidden" : ""}
                         `}
-                            style={{ background: "#111", scrollbarWidth: "none" }}>
+                            style={{ background: "#111", scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
                             <RunnerDetail />
                         </div>
                     </div>

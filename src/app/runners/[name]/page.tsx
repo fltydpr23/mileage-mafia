@@ -13,6 +13,34 @@ function norm(v: any) {
     .replace(/[\u200B-\u200D\uFEFF]/g, "");
 }
 
+function normMatch(a: string, b: string): boolean {
+  const na = norm(a);
+  const nb = norm(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+
+  const ALIASES: Record<string, string[]> = {
+    "pcd": ["pcd", "parikshit", "parikshit d", "p.c.d.", "p.c.d", "p c d", "parikshit choudhary", "pari"],
+    "boba": ["boba", "boba fett"],
+    "raja": ["raja", "rajasharavana"],
+    "sd": ["sd", "shreyas", "shreyas d"],
+    "loaf": ["loaf", "loafcat"],
+  };
+
+  for (const list of Object.values(ALIASES)) {
+    const normList = list.map(norm);
+    if (normList.includes(na) && normList.includes(nb)) {
+      return true;
+    }
+  }
+
+  if (na.length >= 3 && nb.length >= 3) {
+    if (na.startsWith(nb) || nb.startsWith(na)) return true;
+  }
+
+  return false;
+}
+
 function toNum(v: any) {
   const n = parseFloat(String(v ?? "").replace(/[^0-9.-]/g, ""));
   return Number.isFinite(n) ? n : 0;
@@ -202,339 +230,418 @@ function fmtAcceptedTs(ts: string) {
 }
 
 export default async function RunnerPage({ params }: { params: Promise<{ name: string }> }) {
-  const { name } = await params;
+  try {
+    const { name } = await params;
 
-  const urlName = decodeURIComponent(name);
-  const routeName = norm(urlName);
+    const urlName = decodeURIComponent(name);
+    const routeName = norm(urlName);
 
-  // A Name | B Yearly KM | C Completion % | D Rank | E Weekly Target | F Annual Target | G RunHistory JSON
-  const isManual = process.env.STATS_SOURCE === "MANUAL";
-  const raw = await getSheet(isManual ? "Leaderboard!A2:M200" : "API_Leaderboard!A2:H200");
-  
-  const rows = (raw ?? []).map((r) => {
-    if (isManual) {
-       // Manual Table Mapping: 
-       // H (7) Rank | I (8) Name | J (9) Annual | K (10) Yearly | L (11) % | M (12) Weekly
-       return {
-         name: String(r?.[8] ?? "").trim(),
-         yearlyKm: toNum(r?.[10]),
-         completionText: String(r?.[11] ?? ""),
-         rank: String(r?.[7] ?? ""),
-         weeklyTarget: toNum(r?.[12]),
-         annualTarget: toNum(r?.[9]),
-         runHistory: [],
-       };
+    // A Name | B Yearly KM | C Completion % | D Rank | E Weekly Target | F Annual Target | G RunHistory JSON
+    // We're setting Strava aside for now; exclusively use Google Sheets as the data source
+    const isManual = true; 
+    const raw = await getSheet(isManual ? "Leaderboard!A2:Z200" : "API_Leaderboard!A2:H200");
+    
+    const rows = (raw ?? []).map((r) => {
+      if (isManual) {
+         // Manual Table Mapping: 
+         // H (7) Rank | I (8) Name | J (9) Annual | K (10) Yearly | L (11) % | M (12) Weekly
+         return {
+           name: String(r?.[8] ?? "").trim(),
+           yearlyKm: toNum(r?.[10]),
+           completionText: String(r?.[11] ?? ""),
+           rank: String(r?.[7] ?? ""),
+           weeklyTarget: toNum(r?.[12]),
+           annualTarget: toNum(r?.[9]),
+           rawRow: r,
+           runHistory: [],
+         };
+      }
+
+      let runHistory = [];
+      let summaryStats = null;
+      try {
+        if (r?.[6]) runHistory = JSON.parse(String(r[6]));
+      } catch (err) {}
+      try {
+        if (r?.[7]) summaryStats = JSON.parse(String(r[7]));
+      } catch {}
+
+      return {
+        name: String(r?.[0] ?? ""),
+        yearlyKm: toNum(r?.[1]),
+        completion: toPercent(r?.[2]),
+        completionText: String(r?.[2] ?? ""),
+        rank: String(r?.[3] ?? ""),
+        weeklyTarget: toNum(r?.[4]),
+        annualTarget: toNum(r?.[5]),
+        rawRow: r,
+        runHistory,
+        summaryStats,
+      };
+    });
+
+    const runner = rows.find((r) => normMatch(r.name, urlName) || normMatch(r.name, routeName));
+
+    const sortedRows = [...rows].sort((a, b) => {
+      const rankA = Number(a.rank) || 999;
+      const rankB = Number(b.rank) || 999;
+      if (rankA !== 999 && rankB !== 999 && rankA !== rankB) return rankA - rankB;
+      return toPercent(b.completionText) - toPercent(a.completionText);
+    });
+
+    const top5Runners = sortedRows.slice(0, 5).map(r => ({
+      name: r.name,
+      yearlyKm: r.yearlyKm,
+      completion: toPercent(r.completionText),
+      annualTarget: r.annualTarget,
+      rank: Number(r.rank) || null
+    }));
+
+    const leader = sortedRows[0] || null;
+    const isBonusLeader = runner && leader && normMatch(runner.name, leader.name);
+
+    if (!runner) {
+      return (
+        <div className="min-h-screen bg-neutral-950 text-white p-10 space-y-4">
+          <h1 className="text-2xl font-bold">Runner not found</h1>
+          <div className="text-neutral-400">
+            URL name: <span className="text-white">{urlName}</span>
+          </div>
+          <div className="text-neutral-400">First 10 names in Leaderboard:</div>
+          <ul className="list-disc pl-6 space-y-1 text-neutral-300">
+            {rows.slice(0, 10).map((r, i) => (
+              <li key={`${r.name}-${i}`}>{r.name || "(blank)"}</li>
+            ))}
+          </ul>
+        </div>
+      );
     }
 
-    let runHistory = [];
-    let summaryStats = null;
-    try {
-      if (r?.[6]) runHistory = JSON.parse(String(r[6]));
-    } catch (err) {
-      console.error("Error parsing runHistory for", r?.[0], err);
+    // ===== CONTRACTS (Accepted) =====
+    const logRaw = await getSheet("API_ContractLog!A2:G5000");
+
+    const acceptedAll = (logRaw ?? [])
+      .map((r: any[]) => ({
+        ts: String(r?.[0] ?? "").trim(),
+        runner: String(r?.[1] ?? "").trim(),
+        action: String(r?.[2] ?? "").trim().toUpperCase(),
+        contractId: String(r?.[3] ?? "").trim(),
+        title: String(r?.[4] ?? "").trim(),
+        period: String(r?.[5] ?? "").trim(),
+        meta: String(r?.[6] ?? "").trim(),
+      }))
+      .filter((x) => normMatch(x.runner, runner.name) || normMatch(x.runner, routeName))
+      .filter((x) => x.action === "ACCEPTED")
+      .filter((x) => x.contractId);
+
+    // Dedup by contractId (keep newest)
+    const map = new Map<string, AcceptedContract>();
+    for (const x of acceptedAll) {
+      const prev = map.get(x.contractId);
+      if (!prev) {
+        map.set(x.contractId, {
+          contractId: x.contractId,
+          title: x.title || x.contractId,
+          period: x.period || "—",
+          ts: x.ts,
+          meta: x.meta,
+        });
+        continue;
+      }
+
+      const tPrev = safeDate(prev.ts)?.getTime() ?? 0;
+      const tCur = safeDate(x.ts)?.getTime() ?? 0;
+      if (tCur >= tPrev) {
+        map.set(x.contractId, {
+          contractId: x.contractId,
+          title: x.title || x.contractId,
+          period: x.period || "—",
+          ts: x.ts,
+          meta: x.meta,
+        });
+      }
     }
-    try {
-      if (r?.[7]) summaryStats = JSON.parse(String(r[7]));
-    } catch {}
 
-    return {
-      name: String(r?.[0] ?? ""),
-      yearlyKm: toNum(r?.[1]),
-      completion: toPercent(r?.[2]),
-      completionText: String(r?.[2] ?? ""),
-      rank: String(r?.[3] ?? ""),
-      weeklyTarget: toNum(r?.[4]),
-      annualTarget: toNum(r?.[5]),
-      runHistory,
-      summaryStats,
-    };
-  });
+    const acceptedContracts = Array.from(map.values()).sort((a, b) => {
+      const ta = safeDate(a.ts)?.getTime() ?? 0;
+      const tb = safeDate(b.ts)?.getTime() ?? 0;
+      return tb - ta;
+    });
 
-  const runner = rows.find((r) => norm(r.name) === routeName);
+    const weeklyRaw = await getSheet("API_Weekly!A2:E3307");
+    let weekly = (weeklyRaw ?? [])
+      .map((r) => {
+        const kmRaw = String(r?.[4] ?? "").trim();
+        return {
+          name: String(r?.[0] ?? ""),
+          weekNum: toNum(r?.[1]),
+          weekStart: String(r?.[2] ?? ""),
+          weekEnd: String(r?.[3] ?? ""),
+          kmRaw,
+          km: toNum(kmRaw),
+        };
+      })
+      .filter((w) => normMatch(w.name, runner.name) || normMatch(w.name, routeName))
+      .filter((w) => w.weekNum > 0)
+      .filter((w) => !isBlankKmCell(w.kmRaw))
+      .sort((a, b) => a.weekNum - b.weekNum);
 
-  const sortedRows = [...rows].sort((a, b) => {
-    const rankA = Number(a.rank) || 999;
-    const rankB = Number(b.rank) || 999;
-    if (rankA !== 999 && rankB !== 999 && rankA !== rankB) return rankA - rankB;
-    return toPercent(b.completionText) - toPercent(a.completionText);
-  });
+    // Stage 2: Fetch dedicated sheet tab for runner (e.g. "PCD!A1:Z200", "Parikshit!A1:Z200")
+    if (weekly.length === 0) {
+      const candidateTabNames = [
+        runner.name,
+        runner.name.toUpperCase(),
+        runner.name.toLowerCase(),
+        "PCD",
+        "Parikshit",
+        "Parikshit D",
+        urlName,
+      ];
+      const triedTabs = new Set<string>();
 
-  const top5Runners = sortedRows.slice(0, 5).map(r => ({
-    name: r.name,
-    yearlyKm: r.yearlyKm,
-    completion: toPercent(r.completionText),
-    annualTarget: r.annualTarget,
-    rank: Number(r.rank) || null
-  }));
+      for (const tabName of candidateTabNames) {
+        if (triedTabs.has(tabName.toLowerCase())) continue;
+        triedTabs.add(tabName.toLowerCase());
 
-  const leader = sortedRows[0] || null;
-  const isBonusLeader = runner && leader && norm(runner.name) === norm(leader.name);
+        try {
+          const tabData = await getSheet(`${tabName}!A1:Z200`);
+          if (tabData && tabData.length > 0) {
+            tabData.forEach((row, rowIdx) => {
+              if (!row || row.length === 0) return;
+              let weekNum = 0;
+              let km = 0;
+              let kmRaw = "";
 
-  if (!runner) {
+              row.forEach((cell, colIdx) => {
+                const s = String(cell ?? "").trim();
+                const wMatch = s.match(/^w(?:eek)?\s*(\d+)$/i) || (colIdx === 0 ? s.match(/^(\d+)$/) : null);
+                if (wMatch && !weekNum) {
+                  const val = parseInt(wMatch[1], 10);
+                  if (val > 0 && val <= 53) weekNum = val;
+                }
+                const n = parseFloat(s.replace(/[^0-9.-]/g, ""));
+                if (Number.isFinite(n) && n > 0 && n < 500 && !km && colIdx > 0) {
+                  km = n;
+                  kmRaw = s;
+                }
+              });
+
+              if (!weekNum) weekNum = rowIdx + 1;
+
+              if (km > 0 && weekNum > 0 && weekNum <= 53) {
+                weekly.push({
+                  name: runner.name,
+                  weekNum,
+                  weekStart: `W${weekNum}`,
+                  weekEnd: `W${weekNum}`,
+                  kmRaw: kmRaw || String(km),
+                  km,
+                });
+              }
+            });
+
+            if (weekly.length > 0) {
+              weekly.sort((a, b) => a.weekNum - b.weekNum);
+              break;
+            }
+          }
+        } catch (e) {
+          // ignore tab read error
+        }
+      }
+    }
+
+    // Stage 3: Fallback if API_Weekly and dedicated tab returned no entries (extract weekly columns Q+ / indices 16+ from Leaderboard row)
+    if (weekly.length === 0 && runner.rawRow) {
+      const r = runner.rawRow;
+      for (let colIdx = 16; colIdx < r.length; colIdx++) {
+        const valRaw = String(r[colIdx] ?? "").trim();
+        if (valRaw && !isBlankKmCell(valRaw)) {
+          const km = toNum(valRaw);
+          const weekNum = colIdx - 15; // Col Q (index 16) = W1
+          weekly.push({
+            name: runner.name,
+            weekNum,
+            weekStart: `W${weekNum}`,
+            weekEnd: `W${weekNum}`,
+            kmRaw: valRaw,
+            km,
+          });
+        }
+      }
+    }
+
+    // ===== COMPUTE =====
+    const pct = toPercent(runner.completionText);
+    runner.completion = pct;
+
+    const level = getMafiaLevel(runner.yearlyKm);
+    const tier = getTierProgress(runner.yearlyKm);
+
+    const annualTarget = runner.annualTarget > 0 ? runner.annualTarget : 0;
+    const weeklyTarget = runner.weeklyTarget > 0 ? runner.weeklyTarget : 0;
+
+    const minRequired = Math.round(annualTarget * 0.85);
+    const kmToSafety = Math.max(0, minRequired - runner.yearlyKm);
+
+    const activeWeeks = weekly.filter((w) => w.km > 0).length;
+
+    const last4Weeks = weekly.slice(-4);
+    const avgLast4 = last4Weeks.length
+      ? last4Weeks.reduce((s, w) => s + w.km, 0) / last4Weeks.length
+      : 0;
+
+    const today = new Date();
+    const yearNow = today.getFullYear();
+    const totalDaysNow = isLeapYear(yearNow) ? 366 : 365;
+
+    let cum = 0;
+
+    const chartData = weekly.map((w, i) => {
+      cum += w.km;
+
+      const start = Math.max(0, i - 3);
+      const window = weekly.slice(start, i + 1);
+      const roll4 = window.reduce((s, x) => s + x.km, 0) / Math.max(1, window.length);
+
+      const endDate = parseSheetDate(w.weekEnd) ?? parseSheetDate(w.weekStart);
+      const y = (endDate ?? today).getFullYear();
+      const totalDays = isLeapYear(y) ? 366 : 365;
+      const doy = endDate ? dayOfYear(endDate) : Math.min(totalDays, (i + 1) * 7);
+
+      const expectedCum = annualTarget > 0 ? (annualTarget * doy) / totalDays : 0;
+
+      return {
+        week: `W${w.weekNum}`,
+        km: w.km,
+        hit: (weeklyTarget > 0 && w.km >= weeklyTarget ? 1 : 0) as 0 | 1,
+        roll4,
+        cum,
+        expectedCum,
+      };
+    });
+
+    let runStreak = 0;
+    for (let i = weekly.length - 1; i >= 0; i--) {
+      if (weekly[i].km > 0) runStreak++;
+      else break;
+    }
+
+    const hitWeeks = weeklyTarget > 0 ? weekly.filter((w) => w.km >= weeklyTarget).length : 0;
+    const targetHitRate = activeWeeks && weeklyTarget > 0 ? (hitWeeks / activeWeeks) * 100 : 0;
+
+    const bestWeek =
+      activeWeeks > 0 ? weekly.reduce((best, w) => (w.km > best.km ? w : best), weekly[0]) : null;
+
+    const worstWeek =
+      activeWeeks > 0 ? weekly.reduce((worst, w) => (w.km < worst.km ? w : worst), weekly[0]) : null;
+
+    const weeklyBars = weekly.slice(-12).map((w) => ({
+      label: `W${w.weekNum}`,
+      km: w.km,
+    }));
+
+    const doyNow = dayOfYear(today);
+    const requiredKmPerDay = annualTarget > 0 ? annualTarget / totalDaysNow : 0;
+    const expectedKmByToday = annualTarget > 0 ? annualTarget * (doyNow / totalDaysNow) : 0;
+    const kmDelta = runner.yearlyKm - expectedKmByToday;
+    const daysAheadBehind = requiredKmPerDay > 0 ? kmDelta / requiredKmPerDay : 0;
+
+    const daysBadge =
+      requiredKmPerDay <= 0
+        ? { label: "—", sub: "Set annual target" }
+        : daysAheadBehind >= 0
+          ? { label: `${Math.round(daysAheadBehind)} days ahead`, sub: `+${fmtKm(kmDelta)} km vs plan` }
+          : { label: `${Math.abs(Math.round(daysAheadBehind))} days behind`, sub: `${fmtKm(kmDelta)} km vs plan` };
+
+    const N = 6;
+    const recentWeeks = weekly.slice(-N);
+    const recentWeekKms = recentWeeks.map((w) => w.km).filter((k) => k > 0);
+
+    let medianWeekly = median(recentWeekKms);
+
+    if (weeklyTarget > 0) {
+      medianWeekly = Math.min(medianWeekly, weeklyTarget * 2.5);
+    }
+
+    const kmPerDayMedian = medianWeekly / 7;
+    const paceSoFarKmPerDay = doyNow > 0 ? runner.yearlyKm / doyNow : 0;
+
+    const kmPerDay = recentWeekKms.length >= 3 ? kmPerDayMedian : paceSoFarKmPerDay;
+
+    const remainingKm = Math.max(0, annualTarget - runner.yearlyKm);
+
+    const projectedDays = annualTarget > 0 && kmPerDay > 0.05 ? Math.ceil(remainingKm / kmPerDay) : null;
+    const projectedDate = projectedDays ? addDays(today, projectedDays) : null;
+
+    const projectionNote =
+      recentWeekKms.length >= 3
+        ? `Median of last ${Math.min(N, recentWeekKms.length)} weeks: ~${fmtKm(medianWeekly)} km/wk`
+        : `Using pace so far: ~${fmtKm(kmPerDay * 7)} km/wk`;
+
+    const jan1 = new Date(yearNow, 0, 1);
+    const diffDays = Math.floor((today.getTime() - jan1.getTime()) / 86400000);
+    const weeksElapsed = Math.max(0, Math.floor((diffDays + jan1.getDay()) / 7));
+
+    const startWeek = weekly.length > 0 ? Math.min(...weekly.map(w => w.weekNum)) : 1;
+    const activeMap = new Set(weekly.filter(w => w.km > 0).map(w => w.weekNum));
+
+    let mafiaFine = 0;
+    let consecutiveZeros = 0;
+    let zeroWeekCount = 0;
+
+    for (let w = startWeek; w <= weeksElapsed; w++) {
+      if (activeMap.has(w)) {
+        consecutiveZeros = 0;
+      } else {
+        zeroWeekCount++;
+        consecutiveZeros++;
+        if (consecutiveZeros === 2) {
+          mafiaFine += 500;
+          consecutiveZeros = 0;
+        }
+      }
+    }
+    const zeroWeeks = zeroWeekCount;
+
+    const safeProps = JSON.parse(JSON.stringify({
+      runner,
+      level,
+      tier,
+      isBonusLeader,
+      annualTarget,
+      weeklyTarget,
+      minRequired,
+      kmToSafety,
+      activeWeeks,
+      avgLast4,
+      runStreak,
+      targetHitRate,
+      daysBadge,
+      projectedDateFmt: projectedDate ? fmtDate(projectedDate) : annualTarget > 0 ? "—" : "Set annual target",
+      projectionNote: projectedDate ? projectionNote : annualTarget > 0 ? "Need more weekly data" : "",
+      bestWeek,
+      worstWeek,
+      acceptedContracts,
+      weeklyBars,
+      chartData,
+      top5Runners,
+      summaryStats: runner.summaryStats ?? null,
+      zeroWeeks,
+      mafiaFine,
+      serverTime: today.getTime()
+    }));
+
+    return <RunnerProfileClient {...safeProps} />;
+  } catch (err: any) {
+    console.error("[RunnerPage Error]:", err?.message || String(err));
     return (
       <div className="min-h-screen bg-neutral-950 text-white p-10 space-y-4">
-        <h1 className="text-2xl font-bold">Runner not found</h1>
-        <div className="text-neutral-400">
-          URL name: <span className="text-white">{urlName}</span>
-        </div>
-        <div className="text-neutral-400">First 10 names in API_Leaderboard:</div>
-        <ul className="list-disc pl-6 space-y-1 text-neutral-300">
-          {rows.slice(0, 10).map((r, i) => (
-            <li key={`${r.name}-${i}`}>{r.name || "(blank)"}</li>
-          ))}
-        </ul>
+        <h1 className="text-2xl font-bold">Runner Profile Unavailable</h1>
+        <p className="text-neutral-400">Please refresh or try again in a few moments.</p>
       </div>
     );
   }
-
-  // ===== CONTRACTS (Accepted) =====
-  // Sheet: API_ContractLog
-  // A ts | B runner | C action | D contractId | E title | F period | G meta
-  const logRaw = await getSheet("API_ContractLog!A2:G5000");
-
-  const acceptedAll = (logRaw ?? [])
-    .map((r: any[]) => ({
-      ts: String(r?.[0] ?? "").trim(),
-      runner: String(r?.[1] ?? "").trim(),
-      action: String(r?.[2] ?? "").trim().toUpperCase(),
-      contractId: String(r?.[3] ?? "").trim(),
-      title: String(r?.[4] ?? "").trim(),
-      period: String(r?.[5] ?? "").trim(),
-      meta: String(r?.[6] ?? "").trim(),
-    }))
-    .filter((x) => norm(x.runner) === routeName)
-    .filter((x) => x.action === "ACCEPTED")
-    .filter((x) => x.contractId);
-
-  // Dedup by contractId (keep newest)
-  const map = new Map<string, AcceptedContract>();
-  for (const x of acceptedAll) {
-    const prev = map.get(x.contractId);
-    if (!prev) {
-      map.set(x.contractId, {
-        contractId: x.contractId,
-        title: x.title || x.contractId,
-        period: x.period || "—",
-        ts: x.ts,
-        meta: x.meta,
-      });
-      continue;
-    }
-
-    const tPrev = safeDate(prev.ts)?.getTime() ?? 0;
-    const tCur = safeDate(x.ts)?.getTime() ?? 0;
-    if (tCur >= tPrev) {
-      map.set(x.contractId, {
-        contractId: x.contractId,
-        title: x.title || x.contractId,
-        period: x.period || "—",
-        ts: x.ts,
-        meta: x.meta,
-      });
-    }
-  }
-
-  const acceptedContracts = Array.from(map.values()).sort((a, b) => {
-    const ta = safeDate(a.ts)?.getTime() ?? 0;
-    const tb = safeDate(b.ts)?.getTime() ?? 0;
-    return tb - ta;
-  });
-
-  // Name | Week# | WeekStart | WeekEnd | WeeklyKM
-  const weeklyRaw = await getSheet("API_Weekly!A2:E3307");
-  const weekly = (weeklyRaw ?? [])
-    .map((r) => {
-      const kmRaw = String(r?.[4] ?? "").trim();
-      return {
-        name: String(r?.[0] ?? ""),
-        weekNum: toNum(r?.[1]),
-        weekStart: String(r?.[2] ?? ""),
-        weekEnd: String(r?.[3] ?? ""),
-        kmRaw,
-        km: toNum(kmRaw),
-      };
-    })
-    .filter((w) => norm(w.name) === routeName)
-    .filter((w) => w.weekNum > 0)
-    .filter((w) => !isBlankKmCell(w.kmRaw))
-    .sort((a, b) => a.weekNum - b.weekNum);
-
-  // ===== COMPUTE =====
-  const pct = toPercent(runner.completionText);
-  runner.completion = pct;
-
-  const level = getMafiaLevel(runner.yearlyKm);
-  const tier = getTierProgress(runner.yearlyKm);
-
-  const annualTarget = runner.annualTarget > 0 ? runner.annualTarget : 0;
-  const weeklyTarget = runner.weeklyTarget > 0 ? runner.weeklyTarget : 0;
-
-  // ── Removed the weekly aggregate override to ensure we use the true Strava yearly Total (Column B) ──
-
-  const minRequired = Math.round(annualTarget * 0.85);
-  const kmToSafety = Math.max(0, minRequired - runner.yearlyKm);
-
-  const activeWeeks = weekly.filter((w) => w.km > 0).length;
-
-  // ✅ Avg weekly mileage (last 4 completed weeks)
-  const last4Weeks = weekly.slice(-4);
-  const avgLast4 = last4Weeks.length
-    ? last4Weeks.reduce((s, w) => s + w.km, 0) / last4Weeks.length
-    : 0;
-
-  // ===== Chart data: weekly km + roll4 + cumulative + expected cumulative =====
-  const now = new Date();
-  const today = now;
-  const yearNow = today.getFullYear();
-  const totalDaysNow = isLeapYear(yearNow) ? 366 : 365;
-
-  let cum = 0;
-
-  const chartData = weekly.map((w, i) => {
-    cum += w.km;
-
-    const start = Math.max(0, i - 3);
-    const window = weekly.slice(start, i + 1);
-    const roll4 = window.reduce((s, x) => s + x.km, 0) / Math.max(1, window.length);
-
-    const endDate = parseSheetDate(w.weekEnd) ?? parseSheetDate(w.weekStart);
-    const y = (endDate ?? today).getFullYear();
-    const totalDays = isLeapYear(y) ? 366 : 365;
-    const doy = endDate ? dayOfYear(endDate) : Math.min(totalDays, (i + 1) * 7);
-
-    const expectedCum = annualTarget > 0 ? (annualTarget * doy) / totalDays : 0;
-
-    return {
-      week: `W${w.weekNum}`,
-      km: w.km,
-      hit: (weeklyTarget > 0 && w.km >= weeklyTarget ? 1 : 0) as 0 | 1,
-      roll4,
-      cum,
-      expectedCum,
-    };
-  });
-
-  // 🔥 Running streak: consecutive completed weeks with ANY km > 0
-  let runStreak = 0;
-  for (let i = weekly.length - 1; i >= 0; i--) {
-    if (weekly[i].km > 0) runStreak++;
-    else break;
-  }
-
-  // 🎯 Target hit rate
-  const hitWeeks = weeklyTarget > 0 ? weekly.filter((w) => w.km >= weeklyTarget).length : 0;
-  const targetHitRate = activeWeeks && weeklyTarget > 0 ? (hitWeeks / activeWeeks) * 100 : 0;
-
-  const bestWeek =
-    activeWeeks > 0 ? weekly.reduce((best, w) => (w.km > best.km ? w : best), weekly[0]) : null;
-
-  const worstWeek =
-    activeWeeks > 0 ? weekly.reduce((worst, w) => (w.km < worst.km ? w : worst), weekly[0]) : null;
-
-  const weeklyBars = weekly.slice(-12).map((w) => ({
-    label: `W${w.weekNum}`,
-    km: w.km,
-  }));
-
-  // ===== Days ahead/behind (linear plan to annual target) =====
-  const doyNow = dayOfYear(today);
-  const requiredKmPerDay = annualTarget > 0 ? annualTarget / totalDaysNow : 0;
-  const expectedKmByToday = annualTarget > 0 ? annualTarget * (doyNow / totalDaysNow) : 0;
-  const kmDelta = runner.yearlyKm - expectedKmByToday;
-  const daysAheadBehind = requiredKmPerDay > 0 ? kmDelta / requiredKmPerDay : 0;
-
-  const daysBadge =
-    requiredKmPerDay <= 0
-      ? { label: "—", sub: "Set annual target" }
-      : daysAheadBehind >= 0
-        ? { label: `${Math.round(daysAheadBehind)} days ahead`, sub: `+${fmtKm(kmDelta)} km vs plan` }
-        : { label: `${Math.abs(Math.round(daysAheadBehind))} days behind`, sub: `${fmtKm(kmDelta)} km vs plan` };
-
-  // ===== Projected completion date (median-based, less sensitive to spikes) =====
-  const N = 6;
-  const recentWeeks = weekly.slice(-N);
-  const recentWeekKms = recentWeeks.map((w) => w.km).filter((k) => k > 0);
-
-  let medianWeekly = median(recentWeekKms);
-
-  // guardrail: if weeklyTarget exists, cap median to avoid silly projections
-  if (weeklyTarget > 0) {
-    medianWeekly = Math.min(medianWeekly, weeklyTarget * 2.5);
-  }
-
-  const kmPerDayMedian = medianWeekly / 7;
-  const paceSoFarKmPerDay = doyNow > 0 ? runner.yearlyKm / doyNow : 0;
-
-  const kmPerDay = recentWeekKms.length >= 3 ? kmPerDayMedian : paceSoFarKmPerDay;
-
-  const remainingKm = Math.max(0, annualTarget - runner.yearlyKm);
-
-  const projectedDays = annualTarget > 0 && kmPerDay > 0.05 ? Math.ceil(remainingKm / kmPerDay) : null;
-  const projectedDate = projectedDays ? addDays(today, projectedDays) : null;
-
-  const projectionNote =
-    recentWeekKms.length >= 3
-      ? `Median of last ${Math.min(N, recentWeekKms.length)} weeks: ~${fmtKm(medianWeekly)} km/wk`
-      : `Using pace so far: ~${fmtKm(kmPerDay * 7)} km/wk`;
-
-  // ===== Penalty & Zero Weeks =====
-  // Rule: 2 zero weeks b2b (back-to-back) = 500 rs fine.
-  const jan1 = new Date(yearNow, 0, 1);
-  const diffDays = Math.floor((today.getTime() - jan1.getTime()) / 86400000);
-  const weeksElapsed = Math.max(0, Math.floor((diffDays + jan1.getDay()) / 7));
-
-  // Determine when the runner officially "started" in the system to avoid legacy fines
-  const startWeek = weekly.length > 0 ? Math.min(...weekly.map(w => w.weekNum)) : 1;
-  const activeMap = new Set(weekly.filter(w => w.km > 0).map(w => w.weekNum));
-
-  let mafiaFine = 0;
-  let consecutiveZeros = 0;
-  let zeroWeekCount = 0;
-
-  for (let w = startWeek; w <= weeksElapsed; w++) {
-    if (activeMap.has(w)) {
-      consecutiveZeros = 0;
-    } else {
-      zeroWeekCount++;
-      consecutiveZeros++;
-      if (consecutiveZeros === 2) {
-        mafiaFine += 500;
-        consecutiveZeros = 0; // Reset streak so 4 weeks = 1000, etc.
-      }
-    }
-  }
-  const zeroWeeks = zeroWeekCount;
-
-  // ===== RENDER =====
-  return (
-    <RunnerProfileClient
-      runner={runner}
-      level={level}
-      tier={tier}
-      isBonusLeader={isBonusLeader}
-      annualTarget={annualTarget}
-      weeklyTarget={weeklyTarget}
-      minRequired={minRequired}
-      kmToSafety={kmToSafety}
-      activeWeeks={activeWeeks}
-      avgLast4={avgLast4}
-      runStreak={runStreak}
-      targetHitRate={targetHitRate}
-      daysBadge={daysBadge}
-      projectedDateFmt={projectedDate ? fmtDate(projectedDate) : annualTarget > 0 ? "—" : "Set annual target"}
-      projectionNote={projectedDate ? projectionNote : annualTarget > 0 ? "Need more weekly data" : ""}
-      bestWeek={bestWeek}
-      worstWeek={worstWeek}
-      acceptedContracts={acceptedContracts}
-      weeklyBars={weeklyBars}
-      chartData={chartData}
-      top5Runners={top5Runners}
-      summaryStats={runner.summaryStats ?? null}
-      zeroWeeks={zeroWeeks}
-      mafiaFine={mafiaFine}
-      serverTime={now.getTime()}
-    />
-  );
 }
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {

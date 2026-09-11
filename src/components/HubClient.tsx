@@ -3,7 +3,31 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import MafiaTelemetry from "@/components/MafiaTelemetry";
-import NightRunGame from "@/components/NightRunGame";
+import StatsDashboardClient from "@/components/StatsDashboardClient";
+
+const FULL_NAMES: Record<string, string> = {
+    "Adhi": "Adhi",
+    "Baki": "Baki",
+    "Ashwin": "Ashwin",
+    "Saqib": "Saqib",
+    "Fazal": "Fazal",
+    "Imran": "Imran",
+    "Jazib": "Jazib",
+    "Zoraiz": "Zoraiz",
+    "Taha": "Taha",
+    "Muzz": "Muzz",
+    "Talha": "Talha",
+    "Zain": "Zain"
+};
+
+function getWeekNumber() {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+import SyndicateNav from "@/components/SyndicateNav";
+import PotBreakdownModal from "@/components/PotBreakdownModal";
 import Link from "next/link";
 import PotChip from "@/components/PotChip";
 import NowPlaying from "@/components/NowPlaying";
@@ -33,12 +57,14 @@ interface HubClientProps {
         totalPot: number;
         oathPot: number;
         penaltyFund: number;
+        zeroKmFinesTotal?: number;
         isManual?: boolean;
     };
 }
 
 export default function HubClient({ runners, globalStats }: HubClientProps) {
-    const [hubMode, setHubMode] = useState<"track" | "game">("track");
+    const [hubMode, setHubMode] = useState<"track" | "stats">("track");
+    const [showPotModal, setShowPotModal] = useState(false);
 
     // Track state lifted up
     const [activeRunner, setActiveRunner] = useState<Runner | null>(null);
@@ -66,7 +92,7 @@ export default function HubClient({ runners, globalStats }: HubClientProps) {
             <AnimatePresence mode="wait">
                 <motion.div
                     key="leaderboard-view"
-                    className="flex-1 flex flex-col relative pointer-events-auto"
+                    className="flex-1 min-h-0 h-full w-full flex flex-col relative pointer-events-auto overflow-hidden"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.8 }}
@@ -75,8 +101,60 @@ export default function HubClient({ runners, globalStats }: HubClientProps) {
                     <div className="absolute inset-0 pointer-events-none z-0"
                         style={{ background: "radial-gradient(ellipse at top right, rgba(220,38,38,0.06) 0%, transparent 60%)" }} />
 
-                        {/* ── TOP NAV CONSOLIDATED ── */}
-                        <header className="w-full z-50 pointer-events-auto flex flex-col shrink-0"
+                        {/* ── MOBILE TOP HEADER ── */}
+                        <header className="flex md:hidden w-full z-50 pointer-events-auto flex-col shrink-0 border-b border-white/10" style={{ background: "rgba(10,10,10,0.97)", backdropFilter: "blur(12px)" }}>
+                            <div className="flex items-center justify-between px-4 pt-3 pb-1">
+                                <div className="text-xl font-black italic tracking-widest text-white leading-none">MILEAGE<span className="text-red-600">MAFIA</span></div>
+                                <SyndicateNav currentMode={hubMode} onModeSelect={setHubMode} />
+                            </div>
+                            <div className="flex flex-col px-4 pb-2 items-center text-center">
+                                <div className="text-[11px] font-mono text-white mt-1 mb-2 font-bold tracking-widest">SEASON 2026 • WEEK {getWeekNumber()}</div>
+                                <button 
+                                    onClick={() => setShowPotModal(true)}
+                                    className="flex items-center gap-4 bg-white/5 hover:bg-white/10 active:scale-95 px-4 py-1.5 rounded-full border border-white/10 mt-0.5 shadow-lg transition-all cursor-pointer"
+                                    title="Tap for Pot Breakdown preview"
+                                >
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-[9px] font-mono text-zinc-400 uppercase">Runners</span>
+                                        <span className="text-[10px] font-black font-mono text-white">{globalStats.totalRunners}</span>
+                                    </div>
+                                    <div className="w-[1px] h-3 bg-white/20"></div>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-[9px] font-mono text-zinc-400 uppercase">Total KM</span>
+                                        <span className="text-[10px] font-black font-mono text-white">{(globalStats.totalKm % 1 === 0 ? String(Math.round(globalStats.totalKm)) : globalStats.totalKm.toFixed(1))}</span>
+                                    </div>
+                                    <div className="w-[1px] h-3 bg-white/20"></div>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-[9px] font-mono text-zinc-400 uppercase">Pot</span>
+                                        <span className="text-[10px] font-black font-mono text-green-400 flex items-center gap-1">
+                                            <span>Rs. {globalStats.totalPot.toLocaleString()}</span>
+                                            <span className="text-[9px] text-amber-400">ℹ️</span>
+                                        </span>
+                                    </div>
+                                </button>
+                            </div>
+                            
+                            {/* Segmented Control for Mobile Tabs */}
+                            <div className="px-4 pb-3 pt-2">
+                                <div className="flex bg-black/50 p-1 rounded-lg border border-white/5 relative z-10">
+                                    <button 
+                                        onClick={() => setHubMode("track")}
+                                        className={`flex-1 py-2.5 text-[10px] font-mono font-bold tracking-widest rounded-md transition-colors ${hubMode === "track" ? "bg-[#dc2626] text-white shadow-md shadow-red-900/20" : "text-zinc-500 hover:text-white"}`}
+                                    >
+                                        TELEMETRY
+                                    </button>
+                                    <button 
+                                        onClick={() => setHubMode("stats")}
+                                        className={`flex-1 py-2.5 text-[10px] font-mono font-bold tracking-widest rounded-md transition-colors ${hubMode === "stats" ? "bg-white text-black shadow-md" : "text-zinc-500 hover:text-white"}`}
+                                    >
+                                        STANDINGS
+                                    </button>
+                                </div>
+                            </div>
+                        </header>
+
+                        {/* ── TOP NAV CONSOLIDATED (Desktop) ── */}
+                        <header className="hidden md:flex w-full z-50 pointer-events-auto flex-col shrink-0"
                             style={{ background: "rgba(10,10,10,0.97)", backdropFilter: "blur(12px)" }}>
                             
                             {/* Top ticker */}
@@ -87,7 +165,7 @@ export default function HubClient({ runners, globalStats }: HubClientProps) {
                                         <span className={`text-[9px] font-mono font-bold uppercase tracking-[0.3em] text-red-600 ${shareTech.className}`}>LIVE</span>
                                     </div>
                                     <span className={`text-[9px] text-zinc-600 uppercase tracking-widest hidden sm:block ${shareTech.className}`}>
-                                        Mileage Mafia Racing Club — Season 2025
+                                        Mileage Mafia Racing Club — Season 2026
                                     </span>
                                 </div>
                                 <div className={`text-[9px] text-zinc-600 uppercase tracking-[0.25em] font-mono hidden sm:block`}>
@@ -127,25 +205,29 @@ export default function HubClient({ runners, globalStats }: HubClientProps) {
                                 </div>
 
                                 {/* Right: Tabs */}
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                    <button
-                                        onClick={() => setHubMode("track")}
-                                        className="px-3.5 py-1.5 text-[10px] font-black font-mono tracking-widest transition-all"
-                                        style={hubMode === "track"
-                                            ? { background: "#dc2626", color: "#fff", border: "1px solid #dc2626" }
-                                            : { background: "transparent", border: "1px solid #27272a", color: "#71717a" }}
-                                    >
-                                        TELEMETRY
-                                    </button>
-                                    <button
-                                        onClick={() => setHubMode("game")}
-                                        className="px-3.5 py-1.5 text-[10px] font-black font-mono tracking-widest transition-all"
-                                        style={hubMode === "game"
-                                            ? { background: "#fff", color: "#000", border: "1px solid #fff" }
-                                            : { background: "transparent", border: "1px solid #27272a", color: "#71717a" }}
-                                    >
-                                        ▶ NIGHT RUN
-                                    </button>
+                                <div className="flex items-center gap-3 shrink-0">
+                                    <SyndicateNav currentMode={hubMode} onModeSelect={setHubMode} />
+                                    <div className="h-4 w-[1px] bg-white/10 hidden lg:block" />
+                                    <div className="flex items-center gap-1.5">
+                                        <button
+                                            onClick={() => setHubMode("track")}
+                                            className="px-3.5 py-1.5 text-[10px] font-black font-mono tracking-widest transition-all"
+                                            style={hubMode === "track"
+                                                ? { background: "#dc2626", color: "#fff", border: "1px solid #dc2626" }
+                                                : { background: "transparent", border: "1px solid #27272a", color: "#71717a" }}
+                                        >
+                                            TELEMETRY
+                                        </button>
+                                        <button
+                                            onClick={() => setHubMode("stats")}
+                                            className="px-3.5 py-1.5 text-[10px] font-black font-mono tracking-widest transition-all"
+                                            style={hubMode === "stats"
+                                                ? { background: "#fff", color: "#000", border: "1px solid #fff" }
+                                                : { background: "transparent", border: "1px solid #27272a", color: "#71717a" }}
+                                        >
+                                            STANDINGS
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -155,13 +237,21 @@ export default function HubClient({ runners, globalStats }: HubClientProps) {
                                     {[
                                         { label: "Runners", value: String(globalStats.totalRunners) },
                                         { label: "Total KM", value: (globalStats.totalKm % 1 === 0 ? String(Math.round(globalStats.totalKm)) : globalStats.totalKm.toFixed(1)) },
-                                        { label: "Prize Pool", value: `₹${globalStats.totalPot.toLocaleString()}` },
-                                        { label: "Oath Fund", value: `₹${globalStats.oathPot.toLocaleString()}` },
+                                        { label: "Prize Pool", value: `₹${globalStats.totalPot.toLocaleString()}`, clickable: true },
+                                        { label: "Oath Fund", value: `₹${globalStats.oathPot.toLocaleString()}`, clickable: true },
                                     ].map((s) => (
-                                        <div key={s.label} className="shrink-0 flex flex-col justify-center">
-                                            <div className="text-[8px] font-mono text-zinc-600 uppercase tracking-widest leading-none mb-1">{s.label}</div>
+                                        <button
+                                            key={s.label}
+                                            onClick={() => s.clickable && setShowPotModal(true)}
+                                            className={`shrink-0 flex flex-col justify-center text-left transition-all ${s.clickable ? "hover:opacity-80 cursor-pointer group" : ""}`}
+                                            title={s.clickable ? "Click for Pot Breakdown preview" : undefined}
+                                        >
+                                            <div className="text-[8px] font-mono text-zinc-600 uppercase tracking-widest leading-none mb-1 flex items-center gap-1">
+                                                <span>{s.label}</span>
+                                                {s.clickable && <span className="text-amber-400 text-[8px] opacity-70 group-hover:opacity-100">ℹ️</span>}
+                                            </div>
                                             <div className="text-sm font-black font-mono text-white leading-none whitespace-nowrap">{s.value}</div>
-                                        </div>
+                                        </button>
                                     ))}
                                 </div>
                                 <div className="hidden sm:flex items-center gap-2 shrink-0">
@@ -188,27 +278,31 @@ export default function HubClient({ runners, globalStats }: HubClientProps) {
                         )}
                         </AnimatePresence>
 
-                        {/* ── NIGHT RUN GAME ── */}
-                        <AnimatePresence>
-                        {hubMode === "game" && (
+                        {/* ── STATS DASHBOARD ── */}
+                        <AnimatePresence mode="wait">
+                        {hubMode === "stats" && (
                             <motion.div
-                                key="nightrun"
-                                className="absolute inset-0 z-30 pointer-events-auto"
+                                key="stats-dashboard"
+                                className="flex-1 min-h-0 w-full h-full overflow-hidden relative z-30 pointer-events-auto bg-[#09090b] flex flex-col"
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 20 }}
                                 transition={{ duration: 0.3 }}
-                                style={{ paddingTop: "72px" }}
                             >
-                                <NightRunGame
-                                    runners={runners.map(r => ({ ...r, annualTarget: r.annualTarget ?? 1000 }))}
-                                    onClose={() => setHubMode("track")}
-                                />
+                                <StatsDashboardClient runners={runners} globalStats={globalStats} fullNames={FULL_NAMES} />
                             </motion.div>
                         )}
                         </AnimatePresence>
+
+
                 </motion.div>
             </AnimatePresence>
+
+            <PotBreakdownModal
+                isOpen={showPotModal}
+                onClose={() => setShowPotModal(false)}
+                globalStats={globalStats}
+            />
 
             <style>{`
         .mm-static{

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getSheet } from "@/lib/sheets";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +31,29 @@ function pillFor(kind: PotEvent["kind"]) {
   return "bg-white/5 text-neutral-200 ring-1 ring-white/10";
 }
 
+function toNum(v: any) {
+  const n = parseFloat(String(v ?? "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default async function PotPage() {
-  // ===== Hardcoded for now (we can wire Sheets later) =====
-  // Bribery case happened on 2 Feb 2026:
+  // Fetch live zero-KM fines from Google Sheets
+  const raw = await getSheet("Leaderboard!A2:Z200");
+  const finedRunners: Array<{ name: string; amount: number; zeroWeeks: number }> = [];
+
+  for (const r of raw ?? []) {
+    const name = String(r?.[8] ?? "").trim();
+    if (!name) continue;
+    const isRaja = name.toLowerCase() === "raja";
+    const mafiaFine = isRaja ? 0 : Math.abs(toNum(r?.[14]));
+    const zeroWeeks = toNum(r?.[15]);
+    if (mafiaFine > 0) {
+      finedRunners.push({ name, amount: mafiaFine, zeroWeeks });
+    }
+  }
+
+  const zeroKmFineTotal = finedRunners.reduce((s, r) => s + r.amount, 0);
+
   const events: PotEvent[] = [
     {
       id: "bribery-2026-02-02",
@@ -48,6 +69,21 @@ export default async function PotPage() {
         { name: "Rishi", amount: 500 },
       ],
     },
+    ...(zeroKmFineTotal > 0
+      ? [
+          {
+            id: "zero-km-fines-sheets",
+            date: "Live (Season 2026)",
+            isoDate: "2026-02-15",
+            title: "Penalty collected — 2 Consecutive Zero-KM Weeks Rule (₹500 / incident)",
+            description:
+              "Automated syndicate fine enforced for logging 0 KM across 2 or more back-to-back weeks.",
+            kind: "penalty" as const,
+            amount: zeroKmFineTotal,
+            people: finedRunners.map((f) => ({ name: `${f.name} (${f.zeroWeeks} zero wks)`, amount: f.amount })),
+          },
+        ]
+      : []),
     {
       id: "note-payouts",
       date: "—",

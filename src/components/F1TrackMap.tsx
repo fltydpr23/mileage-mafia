@@ -1,11 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { MapControls, Line, Html, Grid, OrbitControls, Tube, Sparkles } from "@react-three/drei";
-import * as THREE from "three";
-import { useRouter } from "next/navigation";
-import { EffectComposer, Bloom } from "@react-three/postprocessing";
+import React, { useEffect, useRef, useState } from "react";
 
 interface Runner {
     name: string;
@@ -25,199 +20,179 @@ interface F1TrackMapProps {
     onRunnerSelect?: (name: string) => void;
 }
 
-// Mimicking an F1 track loop (e.g., Hungaroring-ish)
-const TRACK_POINTS = [
-    new THREE.Vector3(-10, 0, 10),
-    new THREE.Vector3(-8, 0, 2),
-    new THREE.Vector3(-10, 0, -8),
-    new THREE.Vector3(-2, 0, -10),
-    new THREE.Vector3(2, 0, -5),
-    new THREE.Vector3(6, 0, -8),
-    new THREE.Vector3(10, 0, -2),
-    new THREE.Vector3(8, 0, 4),
-    new THREE.Vector3(2, 0, 10),
-    new THREE.Vector3(-4, 0, 8),
-    new THREE.Vector3(-10, 0, 10), // close loop
-];
+// ─── SVG Circuit path (abstract oval with chicane) ───────────────────────────
+const CIRCUIT_PATH = `
+  M 200,270
+  L 100,270
+  C 60,270 45,245 45,210
+  L 45,110
+  C 45,70 70,45 110,45
+  L 170,45
+  C 195,45 205,60 205,80
+  L 205,110
+  C 205,140 220,150 245,150
+  L 285,150
+  C 310,150 320,135 320,110
+  L 320,70
+  C 320,50 340,35 365,45
+  L 435,75
+  C 465,90 475,120 450,150
+  L 405,210
+  C 385,240 355,270 315,270
+  L 255,270
+  C 235,270 225,255 225,235
+  L 225,210
+  C 225,190 210,180 190,180
+  C 170,180 160,195 160,215
+  C 160,245 175,270 200,270
+  Z
+`;
 
 function getRunnerColor(nameKey: string) {
-    if (nameKey === "Adhi") return "#ef4444"; // Red
-    if (["SD", "Raja", "Bhat", "Sanjay"].includes(nameKey)) return "#10b981"; // Green
-    if (["Boba", "Kushal", "Sai"].includes(nameKey)) return "#3b82f6"; // Blue
-    if (["Kumar", "Loaf", "Rishi"].includes(nameKey)) return "#eab308"; // Yellow
+    if (nameKey === "Adhi") return "#ef4444";
+    if (["SD", "Raja", "Bhat", "Sanjay"].includes(nameKey)) return "#10b981";
+    if (["Boba", "Kushal", "Sai"].includes(nameKey)) return "#3b82f6";
+    if (["Kumar", "Loaf", "Rishi"].includes(nameKey)) return "#eab308";
     return "#ffffff";
 }
 
-function RunnerBlob({ runner, curve, maxCompletion, index, fullName, activeRunner, hoveredRunner, onRunnerSelect }: { runner: Runner, curve: THREE.Curve<THREE.Vector3>, maxCompletion: number, index: number, fullName: string, activeRunner?: string, hoveredRunner?: string, onRunnerSelect?: (name: string) => void }) {
-    const router = useRouter();
-    // Internal popup state removed, we now rely entirely on `isActive` from HUD
+export default function F1TrackMap({ runners, fullNames, activeRunner, hoveredRunner, onRunnerSelect }: F1TrackMapProps) {
+    const pathRef = useRef<SVGPathElement>(null);
+    const [points, setPoints] = useState<{name: string, x: number, y: number}[]>([]);
 
-    // F1 Telemetry maps show progress along the track. User requested rank-based positioning.
-    const relativeT = Math.max(0.01, 0.95 - (runner.rank * 0.07));
-    const position = curve.getPointAt(relativeT);
-
-    // Offset slightly for overlaps
-    const offset = new THREE.Vector3((index % 3 - 1) * 0.3, 0, (index % 2 - 0.5) * 0.3);
-    const finalPos = position.clone().add(offset);
-
-    const color = getRunnerColor(runner.name);
-    const abbrev = runner.name.substring(0, 3).toUpperCase();
-
-    const isActive = activeRunner === runner.name;
-    const isHovered = hoveredRunner === runner.name;
-    const blobScale = isActive ? 1.6 : (isHovered ? 1.3 : 1.0);
-    const glowIntensity = isActive ? 6 : (isHovered ? 4 : 2);
+    useEffect(() => {
+        if (!pathRef.current) return;
+        const totalLen = pathRef.current.getTotalLength();
+        
+        // Spread runners along the track based on rank (1st place at 95%, last place at 5%)
+        const newPoints = runners.map((r, i) => {
+            // Add a small bit of separation logic if multiple runners have same rank/km
+            // but for simplicity, we just distribute linearly based on index if ranks tie
+            // Actually, best to just use rank (or relative index to avoid overlaps).
+            const relativeT = Math.max(0.02, 0.98 - ((i) * (0.96 / Math.max(1, runners.length - 1))));
+            const pt = pathRef.current!.getPointAtLength(relativeT * totalLen);
+            return {
+                name: r.name,
+                x: pt.x,
+                y: pt.y
+            };
+        });
+        setPoints(newPoints);
+    }, [runners]);
 
     return (
-        <group position={[finalPos.x, 0, finalPos.z]}>
-            {/* The Blob with glowing emissive material */}
-            <mesh
-                rotation={[-Math.PI / 2, 0, 0]}
-                scale={[blobScale, blobScale, blobScale]}
-                onClick={(e) => { e.stopPropagation(); onRunnerSelect?.(runner.name); }}
-                onPointerOver={() => document.body.style.cursor = 'pointer'}
-                onPointerOut={() => document.body.style.cursor = 'grab'}
-            >
-                <circleGeometry args={[0.6, 32]} />
-                <meshStandardMaterial color={color} emissive={color} emissiveIntensity={glowIntensity} toneMapped={false} />
-            </mesh>
-            {/* Outline for the blob for F1 style */}
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} scale={[blobScale, blobScale, blobScale]}>
-                <ringGeometry args={[0.6, 0.8, 32]} />
-                <meshBasicMaterial color="#ffffff" transparent opacity={0.2} toneMapped={false} />
-            </mesh>
+        <div className="relative w-full h-full flex items-center justify-center p-4 lg:p-12">
+            <svg viewBox="0 0 500 300" className="w-full h-full overflow-visible" style={{ filter: "drop-shadow(0 0 30px rgba(0,0,0,0.5))" }}>
+                {/* Track Base */}
+                <path d={CIRCUIT_PATH} fill="none" stroke="#0a0a0a" strokeWidth="18" strokeLinecap="round" strokeLinejoin="round" />
+                <path d={CIRCUIT_PATH} fill="none" stroke="#1a1a1a" strokeWidth="16" strokeLinecap="round" strokeLinejoin="round" />
+                {/* Holographic Centerline */}
+                <path 
+                    d={CIRCUIT_PATH} 
+                    fill="none" 
+                    stroke="#00f3ff" 
+                    strokeWidth="1.5" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeDasharray="1 12" 
+                    className="opacity-50"
+                    style={{ filter: "drop-shadow(0 0 4px #00f3ff)" }} 
+                />
+                
+                {/* The actual invisible path for measuring length */}
+                <path ref={pathRef} d={CIRCUIT_PATH} fill="none" className="invisible" />
 
-            {/* Label attached to the blob (Only opens if actively selected from HUD) */}
-            {isActive && (
-                <Html center position={[0, 1.5, 0]} zIndexRange={[100, 0]}>
-                    <div className="bg-zinc-950/95 backdrop-blur-md border border-zinc-800 text-white p-3 rounded-lg shadow-2xl flex flex-col gap-2 min-w-[150px] animate-in fade-in zoom-in duration-200">
-                        <div className="flex items-center gap-2 mb-1">
-                            <div className="w-2 h-2 rounded-full shadow-[0_0_8px_currentColor]" style={{ backgroundColor: color, color: color }} />
-                            <span className="text-sm font-black uppercase tracking-wider">{fullName}</span>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                            <span className="text-zinc-500 font-bold">DIST</span>
-                            <span className="font-bold font-mono">{runner.yearlyKm.toFixed(0)} KM</span>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                            <span className="text-zinc-500 font-bold">RANK</span>
-                            <span className="font-bold font-mono text-crimson">P{runner.rank}</span>
-                        </div>
-                        <button
-                            onClick={(e) => { e.stopPropagation(); router.push(`/runners/${encodeURIComponent(runner.name.toLowerCase())}`); }}
-                            className="w-full mt-2 bg-red-600 hover:bg-red-500 text-white text-[10px] font-bold py-1.5 rounded transition-colors uppercase tracking-widest border border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.3)] hover:shadow-[0_0_15px_rgba(239,68,68,0.6)]"
+                {/* Runners */}
+                {points.map((pt) => {
+                    const r = runners.find(x => x.name === pt.name);
+                    if (!r) return null;
+                    const isActive = activeRunner === pt.name;
+                    const isHovered = hoveredRunner === pt.name;
+                    const color = getRunnerColor(pt.name);
+                    
+                    return (
+                        <g 
+                            key={pt.name} 
+                            style={{ 
+                                transform: `translate(${pt.x}px, ${pt.y}px)`, 
+                                transition: "all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                                cursor: "pointer" 
+                            }}
+                            onClick={() => onRunnerSelect?.(pt.name)}
                         >
-                            View Dossier
-                        </button>
-                    </div>
-                </Html>
-            )}
-
-            {/* Mini pill label is always visible but extremely non-intrusive */}
-            {!isActive && (
-                <Html center position={[0, 0.5, 0]} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
-                    <div className="bg-white/95 backdrop-blur-sm border border-zinc-800 rounded-full shadow-lg flex items-center pr-2 pl-1 py-0.5 gap-1 opacity-80 shadow-[0_4px_10px_rgba(0,0,0,0.5)]">
-                        <div className="w-1.5 h-3.5 rounded-sm" style={{ backgroundColor: color }} />
-                        <span className="text-[9px] font-black uppercase text-black tracking-widest" style={{ fontFamily: 'sans-serif' }}>
-                            {abbrev}
-                        </span>
-                    </div>
-                </Html>
-            )}
-        </group>
-    );
-}
-
-function Scene({ runners, fullNames, activeRunner, hoveredRunner, onRunnerSelect }: F1TrackMapProps) {
-    const trackCurve = useMemo(() => new THREE.CatmullRomCurve3(TRACK_POINTS, true, "centripetal"), []);
-    const maxCompletion = useMemo(() => runners.length > 0 ? Math.max(100, ...runners.map(r => r.completion)) : 100, [runners]);
-
-    return (
-        <>
-            <color attach="background" args={["#050505"]} />
-            {/* 3D camera controls for immersive viewing */}
-            <OrbitControls 
-               enablePan={false} 
-               maxPolarAngle={Math.PI / 2.1} 
-               minPolarAngle={Math.PI / 6} 
-               maxDistance={80}
-               minDistance={10}
-               autoRotate={false}
-               enableDamping
-            />
-
-            <ambientLight intensity={0.5} />
-            <spotLight position={[0, 40, 0]} intensity={800} color="#dc2626" distance={80} angle={1.2} penumbra={1} castShadow />
+                            {/* Oversized touch target for mobile */}
+                            <circle r={40} fill="transparent" />
+                            
+                            {/* Pulse background for active runner */}
+                            {isActive && (
+                                <circle 
+                                    r={20} 
+                                    fill={color} 
+                                    opacity="0.3" 
+                                    className="animate-ping"
+                                    style={{ filter: `drop-shadow(0 0 10px ${color})` }}
+                                />
+                            )}
+                            
+                            {/* Outer Ring */}
+                            <circle 
+                                r={isActive ? 8 : (isHovered ? 6 : 5)} 
+                                fill="#000" 
+                                stroke={color}
+                                strokeWidth={isActive ? 3 : 2}
+                                className="transition-all duration-300"
+                                style={{
+                                    filter: isActive ? `drop-shadow(0 0 10px ${color})` : "none"
+                                }}
+                            />
+                            
+                            {/* Inner Dot */}
+                            <circle 
+                                r={isActive ? 3 : 2} 
+                                fill={color} 
+                                className="transition-all duration-300"
+                            />
+                            
+                            {/* Name Label */}
+                            <text
+                                y={-16}
+                                x={0}
+                                textAnchor="middle"
+                                fill={isActive ? "#fff" : "#999"}
+                                fontSize={isActive ? "18px" : "13px"}
+                                fontWeight="900"
+                                className="font-mono tracking-widest transition-all duration-300 pointer-events-none select-none"
+                                style={{
+                                    textShadow: "0px 4px 8px rgba(0,0,0,1)",
+                                    opacity: isActive || isHovered ? 1 : 0.5
+                                }}
+                            >
+                                {pt.name.substring(0,3).toUpperCase()}
+                            </text>
+                            
+                            {/* Extra Detail Tag for Active Runner */}
+                            {isActive && (
+                                <g transform="translate(0, 24)">
+                                    {/* Holographic backdrop */}
+                                    <rect x="-50" y="0" width="100" height="22" fill="#000" fillOpacity="0.8" rx="4" stroke={color} strokeWidth="1" style={{ filter: `drop-shadow(0 0 4px ${color})` }} />
+                                    <text x="0" y="15" textAnchor="middle" fill="#fff" fontSize="11px" className="font-mono font-bold pointer-events-none select-none tracking-wider">
+                                        P{r.rank} · {r.yearlyKm.toFixed(0)}KM
+                                    </text>
+                                </g>
+                            )}
+                        </g>
+                    );
+                })}
+            </svg>
             
-            {/* High-tech infinite floor grid */}
-            <Grid 
-                position={[0, -0.5, 0]} 
-                args={[100, 100]} 
-                cellSize={1} 
-                cellThickness={1.5} 
-                cellColor="#27272a" 
-                sectionSize={5} 
-                sectionThickness={2} 
-                sectionColor="#3f3f46" 
-                fadeDistance={45} 
-                infiniteGrid 
-            />
-
-            {/* Atmospherics */}
-            <Sparkles count={400} scale={40} size={1.5} speed={0.4} opacity={0.3} color="#dc2626" />
-            <Sparkles count={400} scale={40} size={1} speed={0.2} opacity={0.2} color="#ffffff" />
-
-            {/* Post-Processing fixed Bloom for elements with emissive materials or toneMapped={false} */}
-            <EffectComposer>
-                <Bloom luminanceThreshold={1} mipmapBlur intensity={2.0} radius={0.5} />
-            </EffectComposer>
-
-            {/* F1 Style Volumetric Track Base */}
-            <Tube args={[trackCurve, 200, 0.4, 16, true]}>
-                <meshPhysicalMaterial 
-                    color="#141414" 
-                    roughness={0.2} 
-                    metalness={0.8}
-                    clearcoat={1}
-                    transmission={0.8}
-                    thickness={1.5}
-                    transparent
-                    opacity={0.8}
-                />
-            </Tube>
-            {/* F1 Style Track Inner Path (Crimson Center Line Glow) */}
-            <Line
-                points={trackCurve.getPoints(200)}
-                color="#dc2626"
-                lineWidth={3}
-                position={[0, 0.05, 0]}
-                toneMapped={false}
-            />
-
-            {/* Render Runner Blobs */}
-            {runners.map((runner, idx) => (
-                <RunnerBlob
-                    key={runner.name}
-                    runner={runner}
-                    curve={trackCurve}
-                    maxCompletion={maxCompletion}
-                    index={idx}
-                    fullName={fullNames[runner.name] || runner.name}
-                    activeRunner={activeRunner}
-                    hoveredRunner={hoveredRunner}
-                    onRunnerSelect={onRunnerSelect}
-                />
-            ))}
-        </>
-    );
-}
-
-export default function F1TrackMap(props: F1TrackMapProps) {
-    return (
-        <div className="w-full h-full relative cursor-grab active:cursor-grabbing hover:cursor-grab">
-            <Canvas camera={{ position: [0, 20, 25], fov: 40 }} shadows>
-                <Scene {...props} />
-            </Canvas>
+            {/* Minimalist Hint Overlay */}
+            {!activeRunner && (
+                <div className="absolute bottom-10 left-1/2 -translate-x-1/2 pointer-events-none opacity-40">
+                    <span className="text-[10px] font-mono font-black uppercase tracking-[0.3em] text-white">
+                        SELECT RUNNER
+                    </span>
+                </div>
+            )}
         </div>
     );
 }

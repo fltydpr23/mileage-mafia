@@ -117,7 +117,7 @@ function StatTile({
     barColor?: string;
 }) {
     return (
-        <div className="flex flex-col gap-2 p-4 rounded-xl bg-black/30 border border-white/5 hover:border-white/10 transition-colors group">
+        <div className="flex flex-col gap-2 p-3 sm:p-4 rounded-xl bg-black/30 border border-white/5 hover:border-white/10 transition-colors group">
             <div className="text-[9px] font-black uppercase tracking-[0.2em] text-neutral-500">{label}</div>
             <div className={`text-lg sm:text-xl font-black tracking-tight leading-none ${accent ? accentColor : "text-white"}`}>
                 {value}
@@ -218,7 +218,7 @@ export default function RunnerProfileClient({
                             <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
                             <span className="text-[9px] font-black uppercase tracking-[0.25em] text-cyan-400">Runner Dossier</span>
                         </div>
-                        <h1 className="text-5xl sm:text-7xl font-black tracking-tighter uppercase leading-none">
+                        <h1 className="text-4xl sm:text-5xl lg:text-7xl font-black tracking-tighter uppercase leading-none">
                             {runner.name}
                         </h1>
                         <div className="flex items-center gap-3 pt-1">
@@ -253,7 +253,8 @@ export default function RunnerProfileClient({
                             </div>
                             {isBonusLeader && (
                                 <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-yellow-500/30 bg-yellow-500/10 text-yellow-400 text-[9px] font-black uppercase tracking-widest">
-                                    👑 Top Earner +₹1000
+                                    <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                                    Top Earner +₹1000
                                 </div>
                             )}
                         </div>
@@ -284,7 +285,7 @@ export default function RunnerProfileClient({
                                      runner.completion < 50 ? "Phase 2 · Expansion" :
                                      runner.completion < 75 ? "Phase 3 · Domination" : "Phase 4 · Optimization"}
                                 </div>
-                                <div className={`text-6xl sm:text-8xl font-black tracking-tighter leading-none ${accentText}`}>
+                                <div className={`text-5xl sm:text-6xl lg:text-8xl font-black tracking-tighter leading-none ${accentText}`}>
                                     <AnimatedNumber value={runner.yearlyKm} decimals={1} />
                                     <span className="text-xl sm:text-2xl text-white/30 ml-2 font-black">KM</span>
                                 </div>
@@ -405,7 +406,7 @@ export default function RunnerProfileClient({
                     className="rounded-xl bg-black/30 border border-white/5 p-5 space-y-4"
                 >
                     <div className="flex items-center justify-between">
-                        <SectionLabel>Season Timeline 2025</SectionLabel>
+                        <SectionLabel>Season Timeline 2026</SectionLabel>
                         <span className="text-[9px] font-black uppercase tracking-widest text-neutral-500">
                             {Math.round(yearProgressPct)}% of year elapsed
                         </span>
@@ -435,12 +436,12 @@ export default function RunnerProfileClient({
                         </div>
                         {/* Labels inside bar */}
                         <div className="absolute inset-0 flex items-center px-3 justify-between pointer-events-none">
-                            <span className="text-[9px] font-black text-white/40 uppercase tracking-widest">Jan</span>
-                            <div className="flex items-center gap-2">
-                                <span className="text-[9px] text-white/30">◼ year elapsed</span>
+                            <span className="text-[9px] font-black text-white/40 uppercase tracking-widest hidden sm:inline">Jan</span>
+                            <div className="flex items-center gap-2 mx-auto sm:mx-0">
+                                <span className="text-[9px] text-white/30 hidden sm:inline">◼ year elapsed</span>
                                 <span className={`text-[9px] font-black ${accentText} opacity-80`}>■ {runner.completion.toFixed(1)}%</span>
                             </div>
-                            <span className="text-[9px] font-black text-white/40 uppercase tracking-widest">Dec</span>
+                            <span className="text-[9px] font-black text-white/40 uppercase tracking-widest hidden sm:inline">Dec</span>
                         </div>
                     </div>
                 </motion.section>
@@ -656,24 +657,12 @@ export default function RunnerProfileClient({
 
             {/* ── FLOATING MUSIC PLAYER ────────────────────────────────────── */}
             <motion.div 
-                initial={{ opacity: 0, x: 100 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ type: "spring", stiffness: 100, damping: 20, delay: 1 }}
-                className="fixed bottom-6 right-6 z-[100] hidden sm:block"
-            >
-                <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-1 shadow-2xl hover:border-white/20 transition-colors">
-                    <NowPlaying />
-                </div>
-            </motion.div>
-
-            {/* Mobile Music Player (slim version or just regular but centered) */}
-            <motion.div 
-                initial={{ opacity: 0, y: 50 }}
+                initial={{ opacity: 0, y: 100 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ type: "spring", stiffness: 100, damping: 20, delay: 1 }}
-                className="fixed bottom-4 left-4 right-4 z-[100] sm:hidden"
+                className="fixed bottom-4 left-0 right-0 sm:left-auto sm:right-6 sm:bottom-6 z-[100] flex justify-center sm:block pointer-events-none"
             >
-                <div className="bg-black/80 backdrop-blur-2xl border border-white/10 rounded-2xl p-1 shadow-2xl">
+                <div className="pointer-events-auto bg-black/60 backdrop-blur-xl border border-white/10 rounded-full p-1 shadow-2xl hover:border-white/20 transition-colors">
                     <NowPlaying />
                 </div>
             </motion.div>

@@ -48,11 +48,15 @@ export default function ActivityMatrix({ runHistory, color = "#06b6d4" }: { runH
     const rgb = hexToRgb(color);
 
     return (
-        <div className="w-full flex flex-col gap-3 overflow-x-auto pb-6 pt-16" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+        <div className="w-full flex flex-col gap-3 overflow-x-auto pb-6 pt-16 relative" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <style>{`
                 .matrix-scroll::-webkit-scrollbar { display: none; }
             `}</style>
-            <div className="flex gap-2 min-w-max mx-auto matrix-scroll">
+            
+            {/* Mobile Scroll Affordance */}
+            <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-black/80 to-transparent pointer-events-none sm:hidden z-40" />
+
+            <div className="flex gap-2 min-w-max matrix-scroll px-2 sm:mx-auto">
                 {matrix.map((week, wIdx) => {
                     let tooltipX = "left-1/2 -translate-x-1/2";
                     if (wIdx < 4) tooltipX = "left-0 translate-x-0";
@@ -70,10 +74,10 @@ export default function ActivityMatrix({ runHistory, color = "#06b6d4" }: { runH
                                     return (
                                         <div
                                             key={dIdx}
-                                            className="w-4 h-4 rounded-[3px] transition-all duration-300 hover:scale-150 hover:z-30 group relative"
+                                            className="w-4 h-4 rounded-[3px] transition-all duration-300 hover:scale-150 active:scale-150 hover:z-30 active:z-30 group relative"
                                             style={{ backgroundColor: `rgba(${rgb}, ${clamped})`, boxShadow: `0 0 ${clamped * 10}px rgba(${rgb}, ${clamped * 0.5})` }}
                                         >
-                                            <div className={`absolute opacity-0 group-hover:opacity-100 bottom-full mb-3 ${tooltipX} bg-neutral-950/95 backdrop-blur-md border border-white/20 text-white whitespace-nowrap px-2 py-1.5 rounded pointer-events-none z-50 font-mono shadow-2xl transition-all duration-200 translate-y-2 group-hover:translate-y-0`}>
+                                            <div className={`absolute opacity-0 group-hover:opacity-100 group-active:opacity-100 bottom-full mb-3 ${tooltipX} bg-neutral-950/95 backdrop-blur-md border border-white/20 text-white whitespace-nowrap px-2 py-1.5 rounded pointer-events-none z-50 font-mono shadow-2xl transition-all duration-200 translate-y-2 group-hover:translate-y-0 group-active:translate-y-0`}>
                                                 <div className="text-[9px] text-neutral-400 font-bold uppercase tracking-widest leading-tight mb-1">{day.date}</div>
                                                 <div className="font-black text-white text-xs">{day.dist.toFixed(1)} <span className="text-[9px] text-neutral-500 font-bold tracking-widest">KM</span></div>
                                             </div>
@@ -82,8 +86,8 @@ export default function ActivityMatrix({ runHistory, color = "#06b6d4" }: { runH
                                 }
 
                                 return (
-                                    <div key={dIdx} className={`w-4 h-4 rounded-[3px] cursor-pointer group relative ${intensityClass} hover:z-30 hover:scale-125`}>
-                                        <div className={`absolute opacity-0 group-hover:opacity-100 bottom-full mb-3 ${tooltipX} bg-neutral-950/95 backdrop-blur-md border border-white/20 text-white whitespace-nowrap px-2 py-1.5 rounded pointer-events-none z-50 font-mono shadow-2xl transition-all duration-200 translate-y-2 group-hover:translate-y-0`}>
+                                    <div key={dIdx} className={`w-4 h-4 rounded-[3px] cursor-pointer group relative ${intensityClass} hover:z-30 hover:scale-125 active:z-30 active:scale-125`}>
+                                        <div className={`absolute opacity-0 group-hover:opacity-100 group-active:opacity-100 bottom-full mb-3 ${tooltipX} bg-neutral-950/95 backdrop-blur-md border border-white/20 text-white whitespace-nowrap px-2 py-1.5 rounded pointer-events-none z-50 font-mono shadow-2xl transition-all duration-200 translate-y-2 group-hover:translate-y-0 group-active:translate-y-0`}>
                                             <div className="text-[9px] text-neutral-400 font-bold uppercase tracking-widest leading-tight mb-1">{day.date}</div>
                                             <div className="font-black text-neutral-500 uppercase text-[9px] tracking-widest">Rest Day</div>
                                         </div>

@@ -14,88 +14,114 @@ function toPercent(v: any) {
 }
 
 export default async function LeaderboardPage() {
-  const isManual = process.env.STATS_SOURCE === "MANUAL";
-  console.log(`[LeaderboardPage] STATS_SOURCE: ${process.env.STATS_SOURCE}, isManual: ${isManual}`);
-  
-  const raw = await getSheet(isManual ? "Leaderboard!A2:M200" : "API_Leaderboard!A2:H200");
-  console.log(`[LeaderboardPage] Raw rows count: ${raw?.length || 0}`);
-  if (raw && raw.length > 0) {
-    console.log(`[LeaderboardPage] First row sample:`, JSON.stringify(raw[0]));
-  }
+  try {
+    // We're setting Strava aside for now; exclusively use Google Sheets as the data source
+    const isManual = true; 
+    console.log(`[LeaderboardPage] STATS_SOURCE is forced to MANUAL, isManual: ${isManual}`);
+    
+    const raw = await getSheet(isManual ? "Leaderboard!A2:Z200" : "API_Leaderboard!A2:H200");
+    console.log(`[LeaderboardPage] Raw rows count: ${raw?.length || 0}`);
 
-  const rows = (raw ?? [])
-    .map((r) => {
-      let runHistory = [];
-      try {
-        // Run history is only available in Column G (original table)
-        if (!isManual && r?.[6]) runHistory = JSON.parse(String(r[6]));
-      } catch (e) {
-        // ignore parse errors
-      }
+    const rows = (raw ?? [])
+      .map((r) => {
+        let runHistory = [];
+        try {
+          if (!isManual && r?.[6]) runHistory = JSON.parse(String(r[6]));
+        } catch (e) {}
 
-      let summaryStats = null;
-      try {
-        if (!isManual && r?.[7]) summaryStats = JSON.parse(String(r[7]));
-      } catch {}
+        let summaryStats = null;
+        try {
+          if (!isManual && r?.[7]) summaryStats = JSON.parse(String(r[7]));
+        } catch {}
 
-      if (isManual) {
+        if (isManual) {
+          const bonus = toNum(r?.[13]);
+          const nameStr = String(r?.[8] ?? "").trim();
+          const isRaja = nameStr.toLowerCase() === "raja";
+          const mafiaFine = isRaja ? 0 : Math.abs(toNum(r?.[14]));
+          const zeroWeeks = toNum(r?.[15]);
+
+          return {
+            name: nameStr,
+            yearlyKm: toNum(r?.[10]),
+            completion: toPercent(r?.[11]),
+            rank: toNum(r?.[7]),
+            weeklyTarget: toNum(r?.[12]),
+            annualTarget: toNum(r?.[9]),
+            bonus,
+            zeroWeeks,
+            mafiaFine,
+            runHistory: [],
+            summaryStats: null,
+          };
+        }
+
         return {
-          name: String(r?.[8] ?? "").trim(),
-          yearlyKm: toNum(r?.[10]),
-          completion: toPercent(r?.[11]),
-          rank: toNum(r?.[7]),
-          weeklyTarget: toNum(r?.[12]),
-          annualTarget: toNum(r?.[9]),
-          runHistory: [],
-          summaryStats: null,
+          name: String(r?.[0] ?? "").trim(),
+          yearlyKm: toNum(r?.[1]),
+          completion: toPercent(r?.[2]),
+          rank: toNum(r?.[3]),
+          weeklyTarget: toNum(r?.[4]),
+          annualTarget: toNum(r?.[5]),
+          zeroWeeks: 0,
+          mafiaFine: 0,
+          runHistory: runHistory,
+          summaryStats,
         };
-      }
+      })
+      .filter((r) => r.name.length > 0);
 
-      return {
-        name: String(r?.[0] ?? "").trim(),
-        yearlyKm: toNum(r?.[1]),
-        completion: toPercent(r?.[2]),
-        rank: toNum(r?.[3]),
-        weeklyTarget: toNum(r?.[4]),
-        annualTarget: toNum(r?.[5]),
-        runHistory: runHistory,
-        summaryStats,
-      };
-    })
-    .filter((r) => r.name.length > 0);
+    const sorted = [...rows].sort((a, b) => b.completion - a.completion);
+    
+    // Force sequential ranking based purely on completion percentage
+    sorted.forEach((r, i) => {
+      r.rank = i + 1;
+    });
 
-  const sorted = [...rows].sort((a, b) => b.completion - a.completion);
-  
-  // Force sequential ranking based purely on completion percentage
-  sorted.forEach((r, i) => {
-    r.rank = i + 1;
-  });
+    const totalRunners = rows.length;
 
-  const totalRunners = rows.length;
+    const oathPot = totalRunners * 1000;
+    const briberyPenalties = 1000; // Kumaran (500) + Rishi (500)
+    const zeroKmFinesTotal = rows.reduce((s, r) => s + (r.mafiaFine || 0), 0);
+    const penaltyFund = briberyPenalties + zeroKmFinesTotal;
+    const totalPot = oathPot + penaltyFund;
 
-  const oathPot = totalRunners * 1000;
-  const PENALTIES = [
-    { name: "Kumar", amount: 500, reason: "Bribery", date: "2 Feb 2026" },
-    { name: "Rishi", amount: 500, reason: "Bribery", date: "2 Feb 2026" }
-  ] as const;
-  const penaltyFund = PENALTIES.reduce((s, p) => s + p.amount, 0);
-  const totalPot = oathPot + penaltyFund;
+    const totalKm = rows.reduce((s, r) => s + r.yearlyKm, 0);
+    const totalTargetKm = rows.reduce((s, r) => s + r.annualTarget, 0);
 
-  const totalKm = rows.reduce((s, r) => s + r.yearlyKm, 0);
-  const totalTargetKm = rows.reduce((s, r) => s + r.annualTarget, 0);
+    const safeSorted = JSON.parse(JSON.stringify(sorted));
+    const safeGlobalStats = JSON.parse(JSON.stringify({
+      totalRunners,
+      totalKm,
+      totalTargetKm,
+      totalPot,
+      oathPot,
+      penaltyFund,
+      zeroKmFinesTotal,
+      isManual: true
+    }));
 
-  return (
-    <LeaderboardWrapper
-      runners={sorted}
-      globalStats={{
-        totalRunners,
-        totalKm,
-        totalTargetKm,
-        totalPot,
-        oathPot,
-        penaltyFund,
-        isManual: process.env.STATS_SOURCE === "MANUAL"
-      }}
-    />
-  );
+    return (
+      <LeaderboardWrapper
+        runners={safeSorted}
+        globalStats={safeGlobalStats}
+      />
+    );
+  } catch (err: any) {
+    console.error("[LeaderboardPage Error]:", err?.message || String(err));
+    return (
+      <LeaderboardWrapper
+        runners={[]}
+        globalStats={{
+          totalRunners: 0,
+          totalKm: 0,
+          totalTargetKm: 0,
+          totalPot: 0,
+          oathPot: 0,
+          penaltyFund: 0,
+          isManual: true
+        }}
+      />
+    );
+  }
 }
