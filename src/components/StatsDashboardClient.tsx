@@ -12,6 +12,13 @@ interface Runner {
     rank: number;
     weeklyTarget: number;
     annualTarget: number;
+    zeroWeeks: number;
+    mafiaFine: number;
+    bestWeek: number;
+    avgWeek: number;
+    activeWeeksCount: number;
+    proj: number;
+    form: number[];
     runHistory: any[];
 }
 
@@ -218,90 +225,99 @@ export default function StatsDashboardClient({ runners, globalStats, fullNames }
                             <h2 className="text-lg font-black uppercase tracking-[0.2em] text-white">Global Rankings</h2>
                         </div>
                         
-                        <div className="flex flex-col gap-3">
-                            {/* Header row for list */}
-                            <div className="hidden md:flex items-center px-6 py-2 text-[10px] font-black uppercase tracking-widest text-neutral-500">
-                                <div className="w-16 text-center">POS</div>
-                                <div className="flex-1">DRIVER</div>
-                                <div className="w-48">PROGRESS</div>
-                                <div className="w-32 text-right">TARGET</div>
-                                <div className="w-32 text-right">DISTANCE</div>
-                            </div>
-                            
-                            {allRunners.map((runner) => {
-                                const level = getMafiaLevel(runner.yearlyKm);
-                                const fullName = fullNames[runner.name] || runner.name;
-                                const isTop3 = runner.rank <= 3;
-                                
-                                return (
-                                    <div 
-                                        key={runner.name}
-                                        onClick={() => router.push(`/runners/${encodeURIComponent(runner.name)}`)}
-                                        className={`relative flex items-center justify-between p-5 sm:p-6 rounded-2xl cursor-pointer group ${LIQUID_GLASS} ${LIQUID_GLASS_HOVER} active:scale-[0.98] active:bg-white/5 active:border-white/10 transition-all`}
-                                    >
-                                        {/* Subtle background glow based on tier */}
-                                        <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" 
-                                             style={{ background: `radial-gradient(circle at 10% 50%, ${level.glow}, transparent 60%)` }} />
-                                             
-                                        <div className="flex items-center gap-4 sm:gap-6 w-full relative z-10">
-                                            {/* Rank */}
-                                            <div className="w-12 md:w-16 shrink-0 flex justify-center">
-                                                <div className={`text-2xl sm:text-3xl font-black tabular-nums transition-colors ${isTop3 ? 'text-white' : 'text-neutral-500 group-hover:text-white'}`}>
-                                                    {String(runner.rank).padStart(2, "0")}
+                            <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#0a0a0a] shadow-2xl custom-scrollbar">
+                                <div className="min-w-[980px] flex flex-col">
+                                    {/* Header row for list */}
+                                    <div className="grid grid-cols-[48px_minmax(180px,1.5fr)_80px_80px_80px_70px_70px_50px_50px_80px_100px] items-center gap-x-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-neutral-500 border-b border-white/10 bg-black/40">
+                                        <div className="text-center">POS</div>
+                                        <div className="text-left">DRIVER</div>
+                                        <div className="text-right">YTD</div>
+                                        <div className="text-right">TGT</div>
+                                        <div className="text-right">PROG</div>
+                                        <div className="text-right">BEST</div>
+                                        <div className="text-right">AVG</div>
+                                        <div className="text-center">WKS</div>
+                                        <div className="text-center">B2B</div>
+                                        <div className="text-right">FINES</div>
+                                        <div className="text-right pr-2">FORM</div>
+                                    </div>
+                                    
+                                    {allRunners.map((runner) => {
+                                        const level = getMafiaLevel(runner.yearlyKm);
+                                        const fullName = fullNames[runner.name] || runner.name;
+                                        
+                                        return (
+                                            <div 
+                                                key={runner.name}
+                                                onClick={() => router.push(`/runners/${encodeURIComponent(runner.name)}`)}
+                                                className={`grid grid-cols-[48px_minmax(180px,1.5fr)_80px_80px_80px_70px_70px_50px_50px_80px_100px] items-center gap-x-2 px-4 py-3 border-b border-white/5 cursor-pointer group ${LIQUID_GLASS_HOVER} transition-colors`}
+                                            >
+                                                {/* POS */}
+                                                <div className="text-center font-mono font-bold text-neutral-400 group-hover:text-white transition-colors text-sm">
+                                                    {runner.rank}
                                                 </div>
-                                            </div>
-                                            
-                                            {/* Driver Info */}
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-lg sm:text-xl font-black uppercase tracking-widest text-white truncate flex items-center gap-3">
-                                                    {fullName}
+                                                
+                                                {/* DRIVER */}
+                                                <div className="text-left flex flex-col truncate pr-2">
+                                                    <span className="font-bold text-white text-sm truncate uppercase tracking-wider">{fullName}</span>
+                                                    <span className={`text-[9px] ${level.accentText} uppercase tracking-widest font-black mt-0.5`}>{level.name}</span>
                                                 </div>
-                                                <div className="mt-2 flex items-center gap-2">
-                                                    <div className={`inline-flex px-2.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-widest ${level.badge} backdrop-blur-md bg-black/40`}>
-                                                        {level.name}
-                                                    </div>
-                                                </div>
-                                            </div>
 
-                                            {/* Completion Bar */}
-                                            <div className="hidden md:block w-48 shrink-0">
-                                                <div className="flex justify-between text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-2">
-                                                    <span>Completion</span>
-                                                    <span className={level.accentText}>{runner.completion.toFixed(1)}%</span>
-                                                </div>
-                                                <div className="h-2 bg-black/50 border border-white/5 rounded-full overflow-hidden w-full relative">
-                                                    <motion.div 
-                                                        className={`absolute top-0 bottom-0 left-0 ${level.accentBar}`} 
-                                                        initial={{ width: 0 }}
-                                                        whileInView={{ width: `${Math.min(100, runner.completion)}%` }}
-                                                        viewport={{ once: true }}
-                                                        transition={{ duration: 1, ease: "easeOut" }}
-                                                    >
-                                                        <div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/30" />
-                                                    </motion.div>
-                                                </div>
-                                            </div>
-
-                                            {/* Target */}
-                                            <div className="hidden md:block w-32 shrink-0 text-right">
-                                                <div className="text-lg font-black text-neutral-400">
-                                                    {runner.annualTarget > 0 ? fmtKm(runner.annualTarget) : '—'}
-                                                </div>
-                                                <div className="text-[9px] font-black text-neutral-600 uppercase tracking-widest mt-1">ANNUAL TARGET</div>
-                                            </div>
-
-                                            {/* Distance */}
-                                            <div className="w-24 sm:w-32 text-right shrink-0">
-                                                <div className="text-2xl sm:text-3xl font-black text-white group-hover:scale-110 origin-right transition-transform duration-300 drop-shadow-lg">
+                                                {/* YTD */}
+                                                <div className="text-right font-mono font-black text-white text-sm">
                                                     {fmtKm(runner.yearlyKm)}
                                                 </div>
-                                                <div className="text-[9px] font-black text-neutral-500 uppercase tracking-widest mt-1">KM LOGGED</div>
+
+                                                {/* TARGET */}
+                                                <div className="text-right font-mono text-neutral-400 text-sm">
+                                                    {runner.annualTarget > 0 ? fmtKm(runner.annualTarget) : '-'}
+                                                </div>
+
+                                                {/* % COMPLETION */}
+                                                <div className="text-right font-mono font-bold text-sm" style={{ color: level.ringColor }}>
+                                                    {runner.completion.toFixed(1)}%
+                                                </div>
+
+                                                {/* BEST */}
+                                                <div className="text-right font-mono text-neutral-300 text-sm">
+                                                    {runner.bestWeek > 0 ? fmtKm(runner.bestWeek) : '-'}
+                                                </div>
+
+                                                {/* AVG */}
+                                                <div className="text-right font-mono text-neutral-300 text-sm">
+                                                    {runner.avgWeek > 0 ? fmtKm(runner.avgWeek) : '-'}
+                                                </div>
+
+                                                {/* ACTIVE WEEKS */}
+                                                <div className="text-center font-mono text-neutral-400 text-sm">
+                                                    {runner.activeWeeksCount}
+                                                </div>
+
+                                                {/* ZERO WEEKS */}
+                                                <div className="text-center font-mono text-red-500 font-bold text-sm">
+                                                    {runner.zeroWeeks > 0 ? runner.zeroWeeks : '-'}
+                                                </div>
+
+                                                {/* FINES */}
+                                                <div className="text-right font-mono text-rose-500 font-bold text-sm">
+                                                    {runner.mafiaFine > 0 ? `₹${runner.mafiaFine}` : '-'}
+                                                </div>
+
+                                                {/* FORM (Last 5) */}
+                                                <div className="flex justify-end gap-1.5 pr-2">
+                                                    {runner.form.map((f, i) => (
+                                                        <div 
+                                                            key={i} 
+                                                            className={`w-3 h-3 rounded-[2px] ${f > 0 ? 'bg-emerald-500/80 shadow-[0_0_8px_rgba(16,185,129,0.3)]' : 'bg-red-500/80 shadow-[0_0_8px_rgba(239,68,68,0.3)]'}`}
+                                                            title={f > 0 ? `${fmtKm(f)} km` : '0 km'}
+                                                        />
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                     </div>
 
                     {/* SIDEBAR: MAFIA TIERS LEGEND */}
